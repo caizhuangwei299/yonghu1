@@ -31,34 +31,21 @@
         }
 
         * { margin: 0; padding: 0; box-sizing: border-box; }
-
         html { height: 100%; overflow: hidden; }
-
         body {
-            font-family: var(--font);
-            background: var(--bg-gradient);
-            background-attachment: fixed;
-            color: var(--text-primary);
-            height: 100vh;
-            height: 100dvh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 0;
-            overflow: hidden;
-            overscroll-behavior: none;
-            -webkit-font-smoothing: antialiased;
-            -webkit-tap-highlight-color: transparent;
+            font-family: var(--font); background: var(--bg-gradient); background-attachment: fixed;
+            color: var(--text-primary); height: 100vh; height: 100dvh; display: flex; align-items: center;
+            justify-content: center; padding: 0; overflow: hidden; overscroll-behavior: none;
+            -webkit-font-smoothing: antialiased; -webkit-tap-highlight-color: transparent;
         }
-
         .hidden { display: none !important; }
 
         /* ===== 登录框 ===== */
         #loginBox {
-            max-width: 360px; width: calc(100% - 24px); padding: 32px 24px;
-            background: var(--card-bg); backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px);
-            border: var(--card-border); border-radius: var(--radius); box-shadow: var(--card-shadow);
-            text-align: center; margin: 16px auto; max-height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
+            max-width: 360px; width: calc(100% - 24px); padding: 32px 24px; background: var(--card-bg);
+            backdrop-filter: blur(24px); -webkit-backdrop-filter: blur(24px); border: var(--card-border);
+            border-radius: var(--radius); box-shadow: var(--card-shadow); text-align: center; margin: 16px auto;
+            max-height: 100%; overflow-y: auto; -webkit-overflow-scrolling: touch;
         }
         #loginBox .logo { font-size: 32px; margin-bottom: 8px; }
         #loginBox .sub { color: var(--text-tertiary); font-size: 15px; margin-bottom: 24px; font-weight: 500; }
@@ -66,7 +53,8 @@
         #loginBox .form-group label { display: block; font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
         #loginBox .form-group input {
             width: 100%; padding: 12px 14px; background: var(--input-bg); border: 1px solid var(--separator);
-            border-radius: var(--radius-sm); font-size: 15px; color: var(--text-primary); outline: none; transition: all var(--transition); font-family: var(--font);
+            border-radius: var(--radius-sm); font-size: 15px; color: var(--text-primary); outline: none;
+            transition: all var(--transition); font-family: var(--font);
         }
         #loginBox .form-group input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,122,255,0.12); background: #fff; }
         #loginBox .btn-primary {
@@ -80,16 +68,8 @@
         .remember-row input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--primary); cursor: pointer; border-radius: 4px; }
 
         /* ===== 主容器 ===== */
-        #adminBox {
-            width: 100%; max-width: 600px; height: 100%; position: relative;
-            display: flex; flex-direction: column; overflow: hidden; background: transparent; margin: 0 auto;
-        }
-
-        .view {
-            display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden;
-            -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain;
-            padding: 16px 12px 20px; scrollbar-width: thin;
-        }
+        #adminBox { width: 100%; max-width: 600px; height: 100%; position: relative; display: flex; flex-direction: column; overflow: hidden; background: transparent; margin: 0 auto; }
+        .view { display: none; flex: 1 1 auto; min-height: 0; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-y: contain; padding: 16px 12px 20px; scrollbar-width: thin; }
         .view.active { display: block; }
         .view::-webkit-scrollbar { width: 4px; }
         .view::-webkit-scrollbar-thumb { background: var(--separator); border-radius: 4px; }
@@ -136,12 +116,13 @@
         .form-group { margin-bottom: 10px; }
         .form-group:last-child { margin-bottom: 0; }
         .form-group label { display: block; font-size: 12px; font-weight: 600; color: var(--text-secondary); margin-bottom: 4px; }
-        .form-group input, .form-group select {
+        .form-group input, .form-group select, .form-group textarea {
             width: 100%; padding: 8px 12px; background: var(--input-bg); border: 1px solid var(--separator);
             border-radius: var(--radius-sm); font-size: 13px; color: var(--text-primary); outline: none; transition: all var(--transition); font-family: var(--font);
         }
-        .form-group input:focus, .form-group select:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,122,255,0.10); background: #fff; }
-        .form-group input::placeholder { color: var(--text-quaternary); }
+        .form-group textarea { resize: vertical; min-height: 90px; line-height: 1.5; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,122,255,0.10); background: #fff; }
+        .form-group input::placeholder, .form-group textarea::placeholder { color: var(--text-quaternary); }
 
         .form-grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .form-grid-2 .form-group.full-width { grid-column: span 2; }
@@ -193,11 +174,7 @@
         .list-empty { padding: 24px 12px; text-align: center; color: var(--text-tertiary); font-size: 13px; }
 
         /* ===== 历史记录相关样式 ===== */
-        .search-box {
-            display: flex; align-items: center; background: var(--input-bg);
-            border: 1px solid var(--separator); border-radius: 999px; padding: 8px 16px;
-            margin-bottom: 16px; transition: all 0.3s;
-        }
+        .search-box { display: flex; align-items: center; background: var(--input-bg); border: 1px solid var(--separator); border-radius: 999px; padding: 8px 16px; margin-bottom: 16px; transition: all 0.3s; }
         .search-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(0,122,255,0.12); background: #fff; }
         .search-box input { border: none; background: transparent; outline: none; font-size: 14px; width: 100%; color: var(--text-primary); font-family: var(--font); }
         .search-box input::placeholder { color: var(--text-quaternary); }
@@ -218,8 +195,6 @@
         .record-item .phone { font-size: 16px; font-weight: 700; color: var(--text-primary); letter-spacing: 1px; }
         .record-item .oid { font-size: 12px; color: var(--text-tertiary); background: rgba(255, 255, 255, 0.8); padding: 2px 10px; border-radius: 12px; border: 1px solid var(--separator); }
         .record-item .row-2 { display: flex; justify-content: space-between; align-items: center; font-size: 13px; color: var(--text-secondary); }
-        
-        /* 新增：时间记录样式 */
         .record-item .row-3 { display: flex; justify-content: flex-end; font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
         .badge-new { background: rgba(142, 142, 147, 0.15); color: var(--text-secondary); }
@@ -273,7 +248,7 @@
             .btn { font-size: 12px; padding: 6px 12px; min-height: 32px; }
             .batch-row .btn { padding: 6px 12px; min-height: 32px; }
             .form-group label { font-size: 11px; }
-            .form-group input { font-size: 12px; padding: 6px 10px; }
+            .form-group input, .form-group textarea { font-size: 12px; padding: 6px 10px; }
             .ios-list-item { font-size: 11px; padding: 6px 10px; }
             .admin-header-title { font-size: 16px; }
             .form-grid-2 { grid-template-columns: 1fr; gap: 0; }
@@ -293,10 +268,10 @@
     <!-- 登录页 -->
     <div id="loginBox">
         <div class="logo">📱</div>
-        <div class="sub">管理面板</div>
+        <div class="sub">请输入访问密码</div>
         <div class="form-group">
             <label>密码</label>
-            <input type="password" id="loginPass" placeholder="请输入管理密码" onkeydown="if(event.key==='Enter')checkLogin()">
+            <input type="password" id="loginPass" placeholder="请输入网页密码或管理密码" onkeydown="if(event.key==='Enter')checkLogin()">
         </div>
         <div class="remember-row">
             <input type="checkbox" id="rememberMe">
@@ -313,7 +288,7 @@
         <div id="tab-receive" class="view active">
             <div class="ios-card admin-header-card">
                 <div class="admin-header-left">
-                    <div class="admin-header-title">⚙️ 管理</div>
+                    <div class="admin-header-title">⚙️ <span id="headerTitleText">管理</span></div>
                     <div class="admin-balance-row">
                         <span>余额:</span>
                         <span class="balance-value" id="balanceAmount">--</span>
@@ -322,11 +297,12 @@
                     <div id="balanceError" class="hidden alert alert-error" style="margin-top: 4px; padding: 4px 8px; font-size: 11px;"></div>
                 </div>
                 <div class="admin-header-right">
-                    <button class="btn btn-ghost" onclick="logout()">退出管理</button>
+                    <button class="btn btn-ghost" onclick="logout()">退出</button>
                 </div>
             </div>
 
-            <div class="ios-card">
+            <!-- 基础配置卡片（仅管理员可见） -->
+            <div class="ios-card" id="baseConfigCard">
                 <div class="ios-card-header" style="cursor: pointer; margin-bottom: 0;" onclick="toggleBaseConfig()">
                     <span class="ios-card-title"><span class="emoji">⚙️</span> 基础配置</span>
                     <span id="baseConfigToggleIcon" style="color: var(--text-tertiary); font-size: 13px; font-weight: 600;">▼ 展开</span>
@@ -377,7 +353,20 @@
                 </div>
             </div>
 
+            <!-- 用户端公告/教程配置（新增） -->
             <div class="ios-card">
+                <div class="ios-card-header" style="margin-bottom: 10px;">
+                    <span class="ios-card-title"><span class="emoji">📢</span> 用户端公告/教程</span>
+                </div>
+                <div class="form-group">
+                    <textarea id="configCustomNotice" placeholder="在这里输入显示在用户取号界面顶部的公告或教程步骤。支持换行。留空则不显示。"></textarea>
+                </div>
+                <button class="btn btn-primary btn-block" onclick="saveCustomNotice()" style="margin-top: 10px;">保存公告</button>
+                <div id="noticeSaveResult" class="hidden alert alert-success" style="margin-top: 8px;">✅ 公告已保存并发布</div>
+            </div>
+
+            <!-- 释放链接卡片（仅管理员可见） -->
+            <div class="ios-card" id="lockCard">
                 <div class="ios-card-header" style="margin-bottom: 10px;">
                     <span class="ios-card-title"><span class="emoji">🔒</span> 释放链接</span>
                     <span class="ios-card-sub">使订单失效</span>
@@ -398,7 +387,7 @@
                     <span class="ios-card-title"><span class="emoji">📲</span> 已获取手机号订单</span>
                     <div style="display:flex;gap:6px;flex-wrap:wrap;">
                         <button class="btn btn-secondary btn-sm" onclick="loadActiveOrders(false)">刷新</button>
-                        <button class="btn btn-danger btn-sm" onclick="releaseAllOrders()">一键释放</button>
+                        <button class="btn btn-danger btn-sm" id="releaseAllBtn" onclick="releaseAllOrders()">一键释放</button>
                     </div>
                 </div>
                 <div class="ios-list" id="activeOrderList">
@@ -442,6 +431,17 @@
                 <button class="btn btn-primary btn-block" onclick="saveApiConfig()" style="margin-top: 6px;">保存 API 配置</button>
                 <div id="apiSaveResult" class="hidden alert alert-success" style="margin-top: 10px;">✅ API 配置已保存</div>
             </div>
+
+            <div class="ios-card" id="changeGateCard">
+                <div class="ios-card-header"><span class="ios-card-title"><span class="emoji">🚪</span> 修改网页密码</span></div>
+                <div class="form-group"><label>新网页密码</label><input type="password" id="newGatePassword" placeholder="至少 4 位"></div>
+                <div class="form-group"><label>确认网页密码</label><input type="password" id="confirmGatePassword" placeholder="再次输入新网页密码"></div>
+                <button class="btn btn-primary btn-block" onclick="changeGatePassword()" style="margin-top: 6px;">保存网页密码</button>
+                <div class="alert alert-info" style="margin-top: 10px; font-size: 12px;">
+                    当前网页密码：<span id="currentGateDisplay" style="font-weight:700;">----</span>
+                </div>
+            </div>
+
             <div class="ios-card" style="text-align: center;">
                 <button class="btn btn-danger btn-block" onclick="logout()" style="padding: 12px; font-size: 15px;">退出登录</button>
             </div>
@@ -460,7 +460,9 @@
             'use strict';
 
             const API_BASE = '/api/order';
-            const ADMIN_PASSWORD = 'shinia299.';
+            const ADMIN_PASSWORD = 'shinia599.';          
+            const DEFAULT_GATE_PASSWORD = 'gate888';      
+            const GATE_STORAGE_KEY = 'gate_password';     
             const PAGE_SIZE = 20;
 
             const loginBox = document.getElementById('loginBox');
@@ -469,6 +471,12 @@
             const loginError = document.getElementById('loginError');
             const toastEl = document.getElementById('toast');
             const rememberMe = document.getElementById('rememberMe');
+
+            window.currentMode = null;
+
+            function getGatePassword() {
+                return localStorage.getItem(GATE_STORAGE_KEY) || DEFAULT_GATE_PASSWORD;
+            }
 
             let toastTimer = null;
             function showToast(msg, duration) {
@@ -544,27 +552,49 @@
 
             window.checkLogin = function() {
                 const pwd = loginPass.value;
+                let mode = null;
                 if (pwd === ADMIN_PASSWORD) {
+                    mode = 'admin';
+                } else if (pwd === getGatePassword()) {
+                    mode = 'user';
+                }
+
+                if (mode) {
+                    window.currentMode = mode;
                     saveRemembered(pwd);
-                    sessionStorage.setItem('admin_logged_in', 'true');
-                    loginBox.classList.add('hidden'); adminBox.classList.remove('hidden'); loginError.classList.add('hidden');
-                    initAdmin(); showToast('✅ 登录成功'); setTimeout(() => window.fetchBalance(true), 500);
+                    sessionStorage.setItem('admin_logged_in', mode);
+                    loginBox.classList.add('hidden');
+                    adminBox.classList.remove('hidden');
+                    loginError.classList.add('hidden');
+                    initAdmin();
+                    showToast(mode === 'admin' ? '✅ 管理员登录成功' : '✅ 欢迎访问');
+                    setTimeout(() => window.fetchBalance(true), 500);
                 } else {
-                    loginError.classList.remove('hidden'); loginPass.value = ''; loginPass.focus();
+                    loginError.classList.remove('hidden');
+                    loginPass.value = '';
+                    loginPass.focus();
                 }
             };
 
             window.logout = function() {
                 if (!confirm('确定退出登录吗？')) return;
                 sessionStorage.removeItem('admin_logged_in');
-                adminBox.classList.add('hidden'); loginBox.classList.remove('hidden'); loginPass.value = ''; loginError.classList.add('hidden');
+                adminBox.classList.add('hidden');
+                loginBox.classList.remove('hidden');
+                loginPass.value = '';
+                loginError.classList.add('hidden');
                 if (window.recordPollingTimer) { clearInterval(window.recordPollingTimer); window.recordPollingTimer = null; }
                 showToast('已退出');
             };
 
             loadRemembered();
-            if (sessionStorage.getItem('admin_logged_in') === 'true') {
-                loginBox.classList.add('hidden'); adminBox.classList.remove('hidden'); initAdmin(); setTimeout(() => window.fetchBalance(true), 500);
+            const savedMode = sessionStorage.getItem('admin_logged_in');
+            if (savedMode === 'admin' || savedMode === 'user') {
+                window.currentMode = savedMode;
+                loginBox.classList.add('hidden');
+                adminBox.classList.remove('hidden');
+                initAdmin();
+                setTimeout(() => window.fetchBalance(true), 500);
             }
 
             function initAdmin() {
@@ -574,7 +604,46 @@
                 window.recordLoaded = false;
 
                 const CONFIG_KEY = 'hao_admin_config';
-                const DEFAULT_CONFIG = { apiUser: '', apiPass: '', sid: '24085', ascription: '', paragraph: '', exclude: '', uid: '' };
+                // 新增 customNotice 字段
+                const DEFAULT_CONFIG = { apiUser: '', apiPass: '', sid: '24085', ascription: '', paragraph: '', exclude: '', uid: '', customNotice: '' };
+
+                function applyModeUI() {
+                    const isAdmin = window.currentMode === 'admin';
+                    const headerTitle = document.getElementById('headerTitleText');
+                    if (headerTitle) headerTitle.textContent = isAdmin ? '管理' : '接码';
+
+                    const profileNav = document.querySelector('.nav-item[data-target="tab-profile"]');
+                    if (profileNav) profileNav.style.display = isAdmin ? '' : 'none';
+
+                    const baseCard = document.getElementById('baseConfigCard');
+                    if (baseCard) baseCard.style.display = isAdmin ? '' : 'none';
+
+                    const lockCard = document.getElementById('lockCard');
+                    if (lockCard) lockCard.style.display = isAdmin ? '' : 'none';
+
+                    const releaseAllBtn = document.getElementById('releaseAllBtn');
+                    if (releaseAllBtn) releaseAllBtn.style.display = isAdmin ? '' : 'none';
+
+                    const changeGateCard = document.getElementById('changeGateCard');
+                    if (changeGateCard) changeGateCard.style.display = isAdmin ? '' : 'none';
+
+                    const gateDisplay = document.getElementById('currentGateDisplay');
+                    if (gateDisplay) gateDisplay.textContent = getGatePassword();
+                }
+                applyModeUI();
+
+                window.changeGatePassword = function() {
+                    const np = document.getElementById('newGatePassword').value.trim();
+                    const cp = document.getElementById('confirmGatePassword').value.trim();
+                    if (!np || np.length < 4) { showToast('⚠️ 网页密码至少 4 位'); return; }
+                    if (np !== cp) { showToast('⚠️ 两次输入不一致'); return; }
+                    if (np === ADMIN_PASSWORD) { showToast('⚠️ 网页密码不能与管理端密码相同'); return; }
+                    localStorage.setItem(GATE_STORAGE_KEY, np);
+                    document.getElementById('currentGateDisplay').textContent = np;
+                    document.getElementById('newGatePassword').value = '';
+                    document.getElementById('confirmGatePassword').value = '';
+                    showToast('✅ 网页密码已修改');
+                };
 
                 function getStoredConfig() {
                     try {
@@ -591,6 +660,8 @@
                     document.getElementById('configParagraph').value  = cfg.paragraph || '';
                     document.getElementById('configExclude').value    = cfg.exclude || '';
                     document.getElementById('configUid').value        = cfg.uid || '';
+                    // 赋值公告
+                    document.getElementById('configCustomNotice').value = cfg.customNotice || '';
                 }
 
                 function collectConfig() {
@@ -601,7 +672,9 @@
                         ascription: document.getElementById('configAscription').value,
                         paragraph:  document.getElementById('configParagraph').value.trim(),
                         exclude:    document.getElementById('configExclude').value.trim(),
-                        uid:        document.getElementById('configUid').value.trim()
+                        uid:        document.getElementById('configUid').value.trim(),
+                        // 收集公告
+                        customNotice: document.getElementById('configCustomNotice').value.trim()
                     };
                 }
 
@@ -618,7 +691,9 @@
                             ascription: data.ascription || '',
                             paragraph:  data.paragraph || '',
                             exclude:    data.exclude || '',
-                            uid:        data.uid || ''
+                            uid:        data.uid || '',
+                            // 读取云端公告
+                            customNotice: data.customNotice || ''
                         };
                         localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
                         applyConfigToForm(cfg);
@@ -638,7 +713,9 @@
                         ascription: cfg.ascription || '',
                         paragraph:  cfg.paragraph || '',
                         exclude:    cfg.exclude || '',
-                        uid:        cfg.uid || ''
+                        uid:        cfg.uid || '',
+                        // 同步到后端
+                        customNotice: cfg.customNotice || ''
                     });
                     const resp = await fetch(`${API_BASE}?${qs.toString()}`);
                     const data = await resp.json();
@@ -659,7 +736,7 @@
                     }
                     const el = document.getElementById('apiSaveResult');
                     el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 2000);
-                    showToast('✅ API 配置已保存（已同步到云端）');
+                    showToast('✅ API 配置已保存');
                 };
 
                 window.saveBaseConfig = async function() {
@@ -674,11 +751,24 @@
                     }
                     const el = document.getElementById('baseSaveResult');
                     el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 2000);
-                    showToast('✅ 基础配置已保存（已同步到云端）');
+                    showToast('✅ 基础配置已保存');
+                };
+
+                // 独立保存公告
+                window.saveCustomNotice = async function() {
+                    showToast('⏳ 正在发布公告...');
+                    try {
+                        await persistConfig(collectConfig());
+                    } catch(e) {
+                        showToast('⚠️ 保存失败: ' + e.message);
+                        return;
+                    }
+                    const el = document.getElementById('noticeSaveResult');
+                    el.classList.remove('hidden'); setTimeout(() => el.classList.add('hidden'), 2000);
+                    showToast('✅ 公告已发布');
                 };
 
                 async function createOrderAndGetLink(specifiedPhone = null) {
-                    // 【改动】订单号缩短：HZ + 4位时间戳(36进制) + 4位随机字符 = 共 10 位（原为 14 位）
                     const oid = 'HZ'
                         + Date.now().toString(36).toUpperCase().slice(-4)
                         + Math.random().toString(36).substring(2, 6).toUpperCase();
@@ -693,7 +783,6 @@
                     }
                     const resp = await fetch(apiUrl); const data = await resp.json();
                     if (!data.success) throw new Error(data.error || '创建订单失败');
-                    // 【改动】改成路径形式：https://xxx/HZxxxxx
                     return location.origin + '/' + oid;
                 }
 
@@ -722,6 +811,7 @@
                 };
 
                 window.lockOrder = async function(oid) {
+                    if (window.currentMode !== 'admin') { showToast('⚠️ 无权限操作'); return; }
                     const oidToLock = oid || document.getElementById('lockOid').value.trim();
                     if (!oidToLock) { showToast('⚠️ 请输入订单号'); return; }
                     const curCfg = getStoredConfig(); const resultDiv = document.getElementById('lockResult');
@@ -752,12 +842,13 @@
                 }
 
                 window.renderActiveOrders = function(orders) {
+                    const isAdmin = window.currentMode === 'admin';
                     const container = document.getElementById('activeOrderList');
                     if (!orders || orders.length === 0) { container.innerHTML = '<div class="list-empty">暂无活跃订单</div>'; return; }
                     container.innerHTML = orders.map(order => `
                         <div class="ios-list-item">
                             <div class="left"><span class="oid">${order.oid}</span><span class="phone">${order.phone || '无手机号'}</span><span class="badge badge-inuse">活跃</span></div>
-                            <div class="right"><button class="btn btn-danger btn-sm" onclick="lockOrder('${order.oid}')" style="padding:4px 10px;font-size:11px;min-height:24px;">释放</button></div>
+                            ${isAdmin ? `<div class="right"><button class="btn btn-danger btn-sm" onclick="lockOrder('${order.oid}')" style="padding:4px 10px;font-size:11px;min-height:24px;">释放</button></div>` : ''}
                         </div>`).join('');
                 };
 
@@ -889,6 +980,7 @@
                 window.nextPage = function() { if (hasMore) loadPage(currentPageIndex + 1); };
 
                 window.releaseAllOrders = async function() {
+                    if (window.currentMode !== 'admin') { showToast('⚠️ 无权限操作'); return; }
                     if (!confirm('确定释放所有已获取手机号的订单吗？此操作不可撤销！')) return;
                     try {
                         const resp = await fetch(`${API_BASE}?action=releaseAllOrders`);
