@@ -5,7 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes, viewport-fit=cover">
     <title>管理面板 · 自动发货</title>
     <style>
-        /* ===== 柔光毛玻璃 UI 风格 ===== */
         :root {
             --bg-gradient: linear-gradient(135deg, #e8f0fe 0%, #fde8f0 50%, #e2f0ff 100%);
             --card-bg: rgba(255, 255, 255, 0.65);
@@ -353,7 +352,7 @@
                 </div>
             </div>
 
-            <!-- 用户端公告/教程配置（新增） -->
+            <!-- 用户端公告/教程配置 -->
             <div class="ios-card">
                 <div class="ios-card-header" style="margin-bottom: 10px;">
                     <span class="ios-card-title"><span class="emoji">📢</span> 用户端公告/教程</span>
@@ -381,7 +380,6 @@
 
         <!-- ============ Tab 2: 记录 ============ -->
         <div id="tab-record" class="view">
-            <!-- 卡片1：活跃订单 -->
             <div class="ios-card">
                 <div class="ios-card-header">
                     <span class="ios-card-title"><span class="emoji">📲</span> 已获取手机号订单</span>
@@ -395,7 +393,6 @@
                 </div>
             </div>
 
-            <!-- 卡片2：历史记录 -->
             <div class="ios-card">
                 <div class="ios-card-header">
                     <span class="ios-card-title"><span class="emoji">📋</span> 获取记录</span>
@@ -604,7 +601,6 @@
                 window.recordLoaded = false;
 
                 const CONFIG_KEY = 'hao_admin_config';
-                // 新增 customNotice 字段
                 const DEFAULT_CONFIG = { apiUser: '', apiPass: '', sid: '24085', ascription: '', paragraph: '', exclude: '', uid: '', customNotice: '' };
 
                 function applyModeUI() {
@@ -660,7 +656,6 @@
                     document.getElementById('configParagraph').value  = cfg.paragraph || '';
                     document.getElementById('configExclude').value    = cfg.exclude || '';
                     document.getElementById('configUid').value        = cfg.uid || '';
-                    // 赋值公告
                     document.getElementById('configCustomNotice').value = cfg.customNotice || '';
                 }
 
@@ -673,7 +668,6 @@
                         paragraph:  document.getElementById('configParagraph').value.trim(),
                         exclude:    document.getElementById('configExclude').value.trim(),
                         uid:        document.getElementById('configUid').value.trim(),
-                        // 收集公告
                         customNotice: document.getElementById('configCustomNotice').value.trim()
                     };
                 }
@@ -692,7 +686,6 @@
                             paragraph:  data.paragraph || '',
                             exclude:    data.exclude || '',
                             uid:        data.uid || '',
-                            // 读取云端公告
                             customNotice: data.customNotice || ''
                         };
                         localStorage.setItem(CONFIG_KEY, JSON.stringify(cfg));
@@ -714,7 +707,6 @@
                         paragraph:  cfg.paragraph || '',
                         exclude:    cfg.exclude || '',
                         uid:        cfg.uid || '',
-                        // 同步到后端
                         customNotice: cfg.customNotice || ''
                     });
                     const resp = await fetch(`${API_BASE}?${qs.toString()}`);
@@ -743,8 +735,12 @@
                     const sid = document.getElementById('configSid').value.trim();
                     if (!sid) { showToast('⚠️ 请输入项目 ID'); return; }
                     showToast('⏳ 正在保存基础配置...');
+                    const cfg = collectConfig();
+                    const stored = getStoredConfig();
+                    if (!cfg.apiUser && stored.apiUser) cfg.apiUser = stored.apiUser;
+                    if (!cfg.apiPass && stored.apiPass) cfg.apiPass = stored.apiPass;
                     try {
-                        await persistConfig(collectConfig());
+                        await persistConfig(cfg);
                     } catch(e) {
                         showToast('⚠️ 保存失败: ' + e.message);
                         return;
@@ -754,11 +750,21 @@
                     showToast('✅ 基础配置已保存');
                 };
 
-                // 独立保存公告
                 window.saveCustomNotice = async function() {
                     showToast('⏳ 正在发布公告...');
+                    const cfg = collectConfig();
+                    const stored = getStoredConfig();
+                    // 自动从缓存补全 API 账号密码，防止因为没填导致保存报错
+                    if (!cfg.apiUser && stored.apiUser) cfg.apiUser = stored.apiUser;
+                    if (!cfg.apiPass && stored.apiPass) cfg.apiPass = stored.apiPass;
+                    
+                    if (!cfg.apiUser || !cfg.apiPass) {
+                        showToast('⚠️ 请先前往“我的”配置 API 账号密码');
+                        return;
+                    }
+
                     try {
-                        await persistConfig(collectConfig());
+                        await persistConfig(cfg);
                     } catch(e) {
                         showToast('⚠️ 保存失败: ' + e.message);
                         return;
