@@ -442,10 +442,10 @@
             'use strict';
 
             const API_BASE = '/api/order';
-            const TIMEOUT_SEC = 65; // 修改为 65 秒
+            const TIMEOUT_SEC = 65; // 65 秒
             const POLL_INTERVAL = 4000;
-            const MAX_RETRIES = 18; // 65 秒内大约轮询 16 次，这里设置 18 次
-            const MAX_ATTEMPTS = 3; // 最多次数
+            const MAX_RETRIES = 18; 
+            const MAX_ATTEMPTS = 3; 
 
             let currentOid = null;
             let currentSid = '24085';
@@ -651,8 +651,9 @@
                 pureCode = extractNumbers(code);
                 $('codeDisplay').textContent = code;
                 
+                isOrderDone = true; // 已完成当前轮次
+
                 if (isFinal) {
-                    isOrderDone = true;
                     disableAllButtons();
                     showUI('done');
                     setStatus('次数已用尽，验证码已收到', 'success');
@@ -789,7 +790,6 @@
                 try {
                     const data = await apiCall('reuse');
                     
-                    // 【修改】复用时不立刻扣减次数，由后端返回真实次数
                     usedAttempts = data.attempts || 0;
                     updateReuseUI();
                     
@@ -826,7 +826,6 @@
                         $('releaseBtn').disabled = false;
                         $('releaseBtn').textContent = '释放手机号，重新获取';
                         setStatus('号码即将释放，可稍候自动换新号', 'warning');
-                        // 倒计时结束，主动触发一次状态检查，让后端释放号码
                         checkOrder(); 
                     }
                 };
@@ -858,7 +857,6 @@
                         isOrderLocked = true; stopAllTimers(); showUI('locked'); return;
                     }
                     if (data.status === 'expired') {
-                        // 如果已经超时，后端会自动释放
                         isOrderExpired = true;
                         enableGetButtons(); showUI('timeout'); setStatus('手机号已过期，可重新获取', 'warning'); 
                         usedAttempts = data.attempts || 0;
@@ -871,6 +869,19 @@
                         currentPhone = data.phone; $('phoneDisplayDone').textContent = data.phone;
                         pureCode = extractNumbers(data.code); $('codeDisplay').textContent = data.code;
                         showUI('done'); setStatus('验证码已收到', 'success'); 
+                        updateReuseUI(); 
+                        return;
+                    }
+                    // 【修改】支持 active 状态下有 code（代表已接到验证码，暂未消耗完次数，等待用户复用或刷新）
+                    if (data.status === 'active' && data.phone && data.code) {
+                        isOrderDone = true; disableAllButtons();
+                        usedAttempts = data.attempts || 1;
+                        currentPhone = data.phone; 
+                        $('phoneDisplayDone').textContent = data.phone;
+                        pureCode = extractNumbers(data.code); 
+                        $('codeDisplay').textContent = data.code;
+                        showUI('done'); 
+                        setStatus('验证码已收到，可继续使用', 'success'); 
                         updateReuseUI(); 
                         return;
                     }
