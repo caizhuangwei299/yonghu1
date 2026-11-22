@@ -361,14 +361,17 @@
                     </span>
                 </div>
 
-                <div id="countdownDisplay" class="hidden">180s</div>
-
-                <div class="polling-indicator" id="pollingIndicator">
-                    <span class="polling-dot"></span>
-                    <span>正在轮询验证码...</span>
-                    <span class="poll-count" id="pollCount"></span>
+                <!-- ===== 隐藏红框内的倒计时、轮询提示等元素 ===== -->
+                <div style="display: none !important;">
+                    <div id="countdownDisplay" class="hidden">180s</div>
+                    <div class="polling-indicator" id="pollingIndicator">
+                        <span class="polling-dot"></span>
+                        <span>正在轮询验证码...</span>
+                        <span class="poll-count" id="pollCount"></span>
+                    </div>
+                    <p class="text-quaternary" style="margin-top: 8px;">自动检测中，收到验证码将自动显示</p>
                 </div>
-                <p class="text-quaternary" style="margin-top: 8px;">自动检测中，收到验证码将自动显示</p>
+                <!-- ============================================== -->
 
                 <button class="btn btn-secondary" onclick="releasePhone()" id="releaseBtn" disabled style="margin-top: 20px;">
                     释放手机号，重新获取（180秒后可操作）
@@ -813,7 +816,7 @@
 
             function startCountdown(expireTs) {
                 if (countdownTimer) clearInterval(countdownTimer);
-                $('countdownDisplay').classList.remove('hidden'); // 修复：让倒计时显示出来
+                $('countdownDisplay').classList.remove('hidden'); // 虽然外部隐藏了，但保留这段逻辑避免JS报错
 
                 const update = () => {
                     if (isOrderLocked || isOrderExpired) { clearInterval(countdownTimer); return; }
