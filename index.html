@@ -208,7 +208,6 @@
         .compact-copy-row { display: flex; gap: 8px; margin-top: 10px; }
         .compact-copy-row .btn-copy { flex: 1; margin-top: 0; justify-content: center; padding: 8px 10px; font-size: 13px; }
 
-        /* ===== 收到验证码弹窗 ===== */
         .code-overlay {
             position: fixed; inset: 0; background: rgba(0, 0, 0, 0.55);
             backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
@@ -256,7 +255,6 @@
         }
         .code-warning .cw-icon { display: block; font-size: 18px; margin-bottom: 4px; }
 
-        /* ===== 自定义公告样式优化 ===== */
         .custom-notice-box {
             margin-bottom: 16px;
             padding: 14px 16px;
@@ -283,7 +281,6 @@
             border-radius: 4px;
         }
 
-        /* 新增：复用号码操作区域 */
         .reuse-action-bar {
             display: flex; gap: 10px; align-items: center; justify-content: space-between;
             margin-top: 12px; padding-top: 12px; border-top: 1px dashed var(--separator);
@@ -308,7 +305,6 @@
 <body>
 
     <div class="container" id="mainContainer">
-        <!-- 无订单号 -->
         <div id="noOrderView">
             <div class="header">
                 <div class="logo"><span class="emoji">⚡</span> 自动发货</div>
@@ -318,14 +314,12 @@
             <p class="text-tertiary" style="margin-top: 16px;">链接由卖家创建，每个链接仅可使用一次</p>
         </div>
 
-        <!-- 有订单号 -->
         <div id="orderView" class="hidden">
             <div class="header">
                 <div class="logo"><span class="emoji">📱</span> 获取验证码</div>
                 <div class="order-id" id="orderIdDisplay"></div>
             </div>
 
-            <!-- 自定义公告展示区域 -->
             <div id="customNoticeBox" class="custom-notice-box hidden"></div>
 
             <div id="lockedBox" class="hidden">
@@ -404,7 +398,6 @@
                         <button class="btn-copy" onclick="copyCode()">📋 复制验证码</button>
                     </div>
                     
-                    <!-- 新增：再次使用按钮区域 -->
                     <div class="reuse-action-bar" id="reuseBarDone">
                         <span class="reuse-count-text" id="reuseCountDisplayDone">剩余次数: 2</span>
                         <button class="btn btn-secondary reuse-btn" onclick="reuseNumber()" id="reuseBtnDone">再次使用该号码</button>
@@ -420,7 +413,6 @@
         </div>
     </div>
 
-    <!-- 验证码弹窗 -->
     <div class="code-overlay hidden" id="codeOverlay">
         <div class="code-modal">
             <div class="code-modal-icon">🎉</div>
@@ -443,7 +435,6 @@
                 验证码仅供本人使用，请勿分享给他人
             </div>
             <button class="btn btn-primary" onclick="closeCodeModal()">我已复制，知道了</button>
-            <!-- 新增：弹窗里的再次使用按钮 -->
             <div class="reuse-action-bar" id="reuseBarModal">
                 <span class="reuse-count-text" id="reuseCountDisplayModal">剩余次数: 2</span>
                 <button class="btn btn-secondary reuse-btn" onclick="closeCodeModal(); reuseNumber();" id="reuseBtnModal">再次使用该号码</button>
@@ -459,9 +450,7 @@
             const TIMEOUT_SEC = 180;
             const POLL_INTERVAL = 4000;
             const MAX_RETRIES = 46;
-            
-            // 新增：最多可使用次数
-            const MAX_ATTEMPTS = 3;
+            const MAX_ATTEMPTS = 3; // 最多次数
 
             let currentOid = null;
             let currentSid = '24085';
@@ -475,8 +464,6 @@
             let pureCode = '';
             let pollAttempts = 0;
             let hasShownCodeModal = false;
-            
-            // 新增：当前已用次数
             let usedAttempts = 0; 
 
             const $ = id => document.getElementById(id);
@@ -485,18 +472,15 @@
             const cmPhone = $('cmPhone');
             const cmCode = $('cmCode');
 
-            // 新增：更新剩余次数 UI
             function updateReuseUI() {
                 const remain = MAX_ATTEMPTS - usedAttempts;
                 const countText = `剩余次数: ${remain}`;
                 
-                // 更新三处显示
                 if($('reuseCountDisplayDone')) $('reuseCountDisplayDone').textContent = countText;
                 if($('reuseCountDisplayModal')) $('reuseCountDisplayModal').textContent = countText;
                 
                 const isDisabled = remain <= 0;
                 
-                // 处理按钮状态
                 ['reuseBtnDone', 'reuseBtnModal'].forEach(id => {
                     const btn = $(id);
                     if(btn) {
@@ -505,7 +489,6 @@
                     }
                 });
 
-                // 如果次数用尽，隐藏或调整相关UI
                 if (isDisabled) {
                     if($('reuseBarDone')) $('reuseBarDone').style.opacity = '0.5';
                     if($('reuseBarModal')) $('reuseBarModal').style.opacity = '0.5';
@@ -522,7 +505,7 @@
                 cmCode.textContent = code || '---';
                 codeOverlay.classList.remove('hidden');
                 document.body.style.overflow = 'hidden';
-                updateReuseUI(); // 显示弹窗时刷新次数
+                updateReuseUI();
             }
 
             window.closeCodeModal = function() {
@@ -664,18 +647,26 @@
                 }
             }
 
-            function handleGotCode(phone, code) {
-                isOrderDone = true;
-                disableAllButtons();
-                stopAllTimers();
+            function handleGotCode(phone, code, isFinal) {
+                // 收到验证码：如果是最后一次，彻底完成；否则允许继续操作
+                stopAllTimers(); 
                 if (phone) {
                     currentPhone = phone;
                     $('phoneDisplayDone').textContent = phone;
                 }
                 pureCode = extractNumbers(code);
                 $('codeDisplay').textContent = code;
-                showUI('done');
-                setStatus('验证码已收到', 'success');
+                
+                if (isFinal) {
+                    isOrderDone = true;
+                    disableAllButtons();
+                    showUI('done');
+                    setStatus('次数已用尽，验证码已收到', 'success');
+                } else {
+                    showUI('done'); 
+                    setStatus('验证码已收到，可继续使用', 'success');
+                }
+                
                 showCodeModal(phone || currentPhone, code);
             }
 
@@ -688,12 +679,12 @@
             }
 
             function startPolling() {
-                stopAllTimers();
+                if (pollingTimer) { clearInterval(pollingTimer); pollingTimer = null; }
                 pollAttempts = 0;
                 updatePollIndicator();
 
                 pollingTimer = setInterval(async () => {
-                    if (isOrderDone || isOrderLocked || isOrderExpired) { stopAllTimers(); return; }
+                    if (isOrderLocked || isOrderExpired) { stopAllTimers(); return; }
                     pollAttempts++;
                     updatePollIndicator();
 
@@ -703,14 +694,16 @@
                         if (statusData.status === 'released' || statusData.status === 'invalid') {
                             isOrderLocked = true; stopAllTimers(); showUI('locked'); return;
                         }
-                        if (statusData.status === 'done' && statusData.code) {
-                            handleGotCode(statusData.phone, statusData.code); return;
+                        if (statusData.status === 'active' && statusData.code) {
+                            handleGotCode(statusData.phone, statusData.code, statusData.attempts >= MAX_ATTEMPTS); 
+                            return;
                         }
                         if (statusData.status === 'active') {
                             const sms = await apiCall('getSMS');
                             if (sms.status === 'expired') { handleExpired(); return; }
-                            if (sms.status === 'done' && sms.code) {
-                                handleGotCode(statusData.phone, sms.code); return;
+                            if (sms.code) {
+                                handleGotCode(statusData.phone, sms.code, statusData.attempts >= MAX_ATTEMPTS); 
+                                return;
                             }
                         }
                         if (pollAttempts >= MAX_RETRIES) {
@@ -744,19 +737,20 @@
                 try {
                     const data = await apiCall('getPhone');
                     
-                    // 首次获取成功，增加已用次数
-                    usedAttempts++; 
+                    usedAttempts = data.attempts || 1; 
                     updateReuseUI();
 
                     if (data.status === 'done') {
-                        handleGotCode(data.phone, data.code);
+                        handleGotCode(data.phone, data.code, true);
                         return;
                     }
                     currentPhone = data.phone;
                     $('phoneDisplay').textContent = data.phone;
+                    
                     startCountdown(data.expire);
                     setStatus('手机号已获取，正在等待验证码...', 'info');
                     startPolling();
+
                 } catch (e) {
                     if (e.status === 403 || e.status === 404 || e.message.includes('释放') || e.message.includes('失效')) {
                         isOrderLocked = true; stopAllTimers(); showUI('locked'); return;
@@ -769,7 +763,6 @@
                 }
             };
 
-            // 新增：再次使用该号码功能
             window.reuseNumber = async function() {
                 if (usedAttempts >= MAX_ATTEMPTS) {
                     alert('已达到最大使用次数限制');
@@ -786,10 +779,9 @@
                 }
 
                 isOrderDone = false;
-                hasShownCodeModal = false; // 允许再次弹出
+                hasShownCodeModal = false; 
                 disableAllButtons();
                 
-                // 重置界面状态
                 showUI('active');
                 $('phoneDisplay').textContent = currentPhone;
                 pureCode = '';
@@ -797,26 +789,16 @@
                 setStatus('正在重新请求该号码...', 'info');
 
                 try {
-                    // 按照你提供的 API 格式，假设后端支持 `reuse` action 或者直接调用第三方
-                    // 如果是直接调用截图中的第三方地址，请将下方 apiCall 替换为你截图中的 fetch 请求
-                    /* 
-                    const url = `https://服务器地址/sms/?api=getPhone&token=你的TOKEN&sid=${currentSid}&phone=${currentPhone}`;
-                    const resp = await fetch(url);
-                    const data = await resp.json();
-                    */ 
+                    const data = await apiCall('reuse');
                     
-                    // 这里假设原后端 API 封装了此逻辑
-                    const data = await apiCall('reuse', { phone: currentPhone });
-
-                    usedAttempts++;
+                    usedAttempts = data.attempts || (usedAttempts + 1);
                     updateReuseUI();
                     
                     if (data.status === 'done') {
-                        handleGotCode(currentPhone, data.code);
+                        handleGotCode(currentPhone, data.code, true);
                         return;
                     }
                     
-                    // 假设返回新的过期时间
                     const expireTs = data.expire || (Date.now() + TIMEOUT_SEC * 1000);
                     startCountdown(expireTs);
                     setStatus('正在等待新的验证码...', 'info');
@@ -826,14 +808,13 @@
                     enableGetButtons();
                     showUI('error');
                     $('errorMessage').textContent = '再次使用失败，请稍后重试或释放号码';
-                    // 回退扣减的次数，因为请求失败了
-                    usedAttempts--; 
-                    updateReuseUI();
                 }
             };
 
             function startCountdown(expireTs) {
                 if (countdownTimer) clearInterval(countdownTimer);
+                $('countdownDisplay').classList.remove('hidden'); // 修复：让倒计时显示出来
+
                 const update = () => {
                     if (isOrderLocked || isOrderExpired) { clearInterval(countdownTimer); return; }
                     const remain = Math.max(0, Math.ceil((expireTs - Date.now()) / 1000));
@@ -878,16 +859,18 @@
                     if (data.status === 'expired') {
                         enableGetButtons(); showUI('timeout'); setStatus('手机号已过期，可重新获取', 'warning'); return;
                     }
-                    if (data.status === 'done' && data.code && extractNumbers(data.code).length >= 4) {
+                    if (data.status === 'done' && data.code) {
+                        usedAttempts = data.attempts || MAX_ATTEMPTS;
                         isOrderDone = true; disableAllButtons();
                         currentPhone = data.phone; $('phoneDisplayDone').textContent = data.phone;
                         pureCode = extractNumbers(data.code); $('codeDisplay').textContent = data.code;
                         showUI('done'); setStatus('验证码已收到', 'success'); 
-                        updateReuseUI(); // 刷新剩余次数
+                        updateReuseUI(); 
                         return;
                     }
                     if (data.status === 'active' && data.phone && data.expire && Date.now() < data.expire) {
                         isOrderDone = false; disableAllButtons();
+                        usedAttempts = data.attempts || 1;
                         currentPhone = data.phone; $('phoneDisplay').textContent = data.phone;
                         startCountdown(data.expire); showUI('active');
                         setStatus('手机号已获取，正在等待验证码...', 'info');
@@ -903,7 +886,6 @@
                 }
             }
 
-            // ================= 核心：拉取后台公告 =================
             async function loadCustomNotice() {
                 try {
                     const resp = await fetch(`${API_BASE}?action=getApiConfig`);
@@ -931,7 +913,6 @@
                 $('noOrderView').classList.add('hidden');
                 $('orderView').classList.remove('hidden');
                 
-                // 页面加载时拉取公告并初始化UI
                 loadCustomNotice();
                 updateReuseUI();
                 checkOrder();
