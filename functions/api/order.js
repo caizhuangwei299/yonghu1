@@ -1,5 +1,5 @@
 // ============ 全局常量 ============
-const PHONE_TTL_MS = 180 * 1000;  // 手机号有效期：180 秒
+const PHONE_TTL_MS = 65 * 1000;   // 手机号有效期：65 秒
 const MAX_ATTEMPTS = 3;           // 最大复用次数
 
 // ============ 订单号格式校验 ============
@@ -95,7 +95,7 @@ export async function onRequest(context) {
         doneTime: row.done_time,
         phoneAssignedAt: row.phone_assigned_at,
         filters: row.filters_json ? JSON.parse(row.filters_json) : {},
-        attempts: row.attempts || 0 // 【新增】复用次数
+        attempts: row.attempts || 0
       };
     }
 
@@ -613,13 +613,13 @@ export async function onRequest(context) {
           await DB.prepare(
             "UPDATE orders SET status = 'expired', phone = NULL, expire = NULL WHERE oid = ?"
           ).bind(oid).run();
-          return jsonResponse({ status: 'expired', phone: null, expire: null, code: null });
+          return jsonResponse({ status: 'expired', phone: null, expire: null, code: null, attempts: order.attempts });
         }
         return jsonResponse(order);
       }
 
       case 'reuse': {
-        // 【新增】复用号码逻辑
+        // 【逻辑】复用号码，不扣减次数
         const order = await getOrder(oid);
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
         
@@ -644,7 +644,7 @@ export async function onRequest(context) {
             order.expire = Date.now() + PHONE_TTL_MS;
             order.status = 'active';
             order.code = null; // 清空旧的验证码
-            order.attempts = (order.attempts || 0) + 1;
+            // 【修改】此处不再增加 attempts
             await saveOrder(oid, order);
             await updateActiveIndex(oid, reusePhone, order.expire);
 
@@ -665,7 +665,6 @@ export async function onRequest(context) {
         let order = await getOrder(oid);
         if (!order) return jsonResponse({ error: '订单不存在或已失效' }, 404);
         
-        // 如果 attempts >= 3 且状态为 done，禁止再次获取
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
 
@@ -705,7 +704,7 @@ export async function onRequest(context) {
             order.code = null;
             order.fromPool = false;
             order.phoneAssignedAt = Date.now();
-            order.attempts = (order.attempts || 0) + 1; // 首次分配计入1次
+            // 【修改】移除 attempts += 1
             await saveOrder(oid, order);
             await updateActiveIndex(oid, realPhone, order.expire);
             return jsonResponse({ phone: realPhone, expire: order.expire, attempts: order.attempts });
@@ -735,7 +734,7 @@ export async function onRequest(context) {
           order.code = null;
           order.fromPool = true;
           order.phoneAssignedAt = Date.now();
-          order.attempts = (order.attempts || 0) + 1; // 首次分配计入1次
+          // 【修改】移除 attempts += 1
           await saveOrder(oid, order);
           await updateActiveIndex(oid, phone, expire);
           return jsonResponse({ phone, expire, attempts: order.attempts });
@@ -761,7 +760,7 @@ export async function onRequest(context) {
           order.code = null;
           order.fromPool = false;
           order.phoneAssignedAt = Date.now();
-          order.attempts = (order.attempts || 0) + 1; // 首次分配计入1次
+          // 【修改】移除 attempts += 1
           await saveOrder(oid, order);
           await updateActiveIndex(oid, phone, order.expire);
           return jsonResponse({ phone, expire: order.expire, attempts: order.attempts });
@@ -795,7 +794,7 @@ export async function onRequest(context) {
         }
 
         if (!order.phone) return jsonResponse({ error: '订单不存在' }, 404);
-        if (order.status !== 'active') return jsonResponse({ status: order.status, code: order.code || null });
+        if (order.status !== 'active') return jsonResponse({ status: order.status, code: order.code || null, attempts: order.attempts });
 
         const tokenStr = await getValidToken();
         const orderSid = order.sid || HAOZHU.sid;
@@ -808,23 +807,28 @@ export async function onRequest(context) {
             const match = raw.match(/(?<!\d)(\d{4,6})(?!\d)/);
             if (match) {
               const code = match[1];
-              // 【修改】如果是最后一次，直接置为 done
-              if (order.attempts >= MAX_ATTEMPTS) {
+              let newAttempts = order.attempts || 0;
+              
+              // 【修改】只有接到了新验证码，才增加次数，防止重复扣减
+              if (order.code !== code) {
+                newAttempts += 1;
+              }
+
+              if (newAttempts >= MAX_ATTEMPTS) {
                 await DB.batch([
-                  DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ? WHERE oid = ?")
-                    .bind(code, Date.now(), oid),
+                  DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ?, attempts = ? WHERE oid = ?")
+                    .bind(code, Date.now(), newAttempts, oid),
                   DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
                 ]);
               } else {
-                // 还有次数，只更新验证码，不结束订单
-                await DB.prepare("UPDATE orders SET code = ? WHERE oid = ?").bind(code, oid).run();
+                await DB.prepare("UPDATE orders SET code = ?, attempts = ? WHERE oid = ?").bind(code, newAttempts, oid).run();
               }
               await addLog(order.phone, oid, 'sms_received');
-              return jsonResponse({ code, status: order.attempts >= MAX_ATTEMPTS ? 'done' : 'active' });
+              return jsonResponse({ code, status: newAttempts >= MAX_ATTEMPTS ? 'done' : 'active', attempts: newAttempts });
             }
           }
         }
-        return jsonResponse({ code: null, status: 'active' });
+        return jsonResponse({ code: null, status: 'active', attempts: order.attempts });
       }
 
       case 'setPhone': {
