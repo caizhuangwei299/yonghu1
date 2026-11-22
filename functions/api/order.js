@@ -644,7 +644,6 @@ export async function onRequest(context) {
             order.expire = Date.now() + PHONE_TTL_MS;
             order.status = 'active';
             order.code = null; // 清空旧的验证码
-            // 【修改】此处不再增加 attempts
             await saveOrder(oid, order);
             await updateActiveIndex(oid, reusePhone, order.expire);
 
@@ -704,7 +703,6 @@ export async function onRequest(context) {
             order.code = null;
             order.fromPool = false;
             order.phoneAssignedAt = Date.now();
-            // 【修改】移除 attempts += 1
             await saveOrder(oid, order);
             await updateActiveIndex(oid, realPhone, order.expire);
             return jsonResponse({ phone: realPhone, expire: order.expire, attempts: order.attempts });
@@ -734,7 +732,6 @@ export async function onRequest(context) {
           order.code = null;
           order.fromPool = true;
           order.phoneAssignedAt = Date.now();
-          // 【修改】移除 attempts += 1
           await saveOrder(oid, order);
           await updateActiveIndex(oid, phone, expire);
           return jsonResponse({ phone, expire, attempts: order.attempts });
@@ -760,7 +757,6 @@ export async function onRequest(context) {
           order.code = null;
           order.fromPool = false;
           order.phoneAssignedAt = Date.now();
-          // 【修改】移除 attempts += 1
           await saveOrder(oid, order);
           await updateActiveIndex(oid, phone, order.expire);
           return jsonResponse({ phone, expire: order.expire, attempts: order.attempts });
@@ -809,19 +805,20 @@ export async function onRequest(context) {
               const code = match[1];
               let newAttempts = order.attempts || 0;
               
-              // 【修改】只有接到了新验证码，才增加次数，防止重复扣减
               if (order.code !== code) {
                 newAttempts += 1;
               }
 
               if (newAttempts >= MAX_ATTEMPTS) {
+                // 【修改】如果达到最大次数，设为 done，expire 清空
                 await DB.batch([
-                  DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ?, attempts = ? WHERE oid = ?")
+                  DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ?, attempts = ?, expire = NULL WHERE oid = ?")
                     .bind(code, Date.now(), newAttempts, oid),
                   DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
                 ]);
               } else {
-                await DB.prepare("UPDATE orders SET code = ?, attempts = ? WHERE oid = ?").bind(code, newAttempts, oid).run();
+                // 【修改】没到最大次数，expire 设为 NULL 暂停倒计时，防止页面刷新后被误释放
+                await DB.prepare("UPDATE orders SET code = ?, attempts = ?, expire = NULL WHERE oid = ?").bind(code, newAttempts, oid).run();
               }
               await addLog(order.phone, oid, 'sms_received');
               return jsonResponse({ code, status: newAttempts >= MAX_ATTEMPTS ? 'done' : 'active', attempts: newAttempts });
