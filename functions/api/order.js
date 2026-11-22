@@ -1,11 +1,8 @@
 // ============ 全局常量 ============
 const PHONE_TTL_MS = 180 * 1000;  // 手机号有效期：180 秒
+const MAX_ATTEMPTS = 3;           // 最大复用次数
 
 // ============ 订单号格式校验 ============
-// 兼容新旧两种长度：
-//   旧订单：HZ + 12 位（14 位）
-//   新订单：HZ + 8 位（10 位）
-// 统一放宽为 HZ 开头 + 6~20 位大写字母/数字，大小写不敏感
 const OID_PATTERN = /^HZ[A-Z0-9]{6,20}$/i;
 function isValidOid(value) {
   return typeof value === 'string' && OID_PATTERN.test(value);
@@ -43,7 +40,6 @@ export async function onRequest(context) {
   const action = url.searchParams.get('action');
   const oid = url.searchParams.get('oid');
 
-  // 【改动】统一校验 oid 格式，拒绝非法订单号（防止异常数据写入 D1）
   if (oid && !isValidOid(oid)) {
     return jsonResponse({ error: '订单ID格式不正确' }, 400);
   }
@@ -52,7 +48,6 @@ export async function onRequest(context) {
     const DB = env.DB;
     if (!DB) throw new Error('严重错误：D1 数据库 (DB) 未绑定');
 
-    // ===== 配置读写工具（替代 __api_config__ / __token_data__）=====
     async function getConfig(key) {
       const row = await DB.prepare('SELECT value FROM kv_store WHERE key = ?').bind(key).first();
       return row ? JSON.parse(row.value) : null;
@@ -99,15 +94,16 @@ export async function onRequest(context) {
         createdAt: row.created_at,
         doneTime: row.done_time,
         phoneAssignedAt: row.phone_assigned_at,
-        filters: row.filters_json ? JSON.parse(row.filters_json) : {}
+        filters: row.filters_json ? JSON.parse(row.filters_json) : {},
+        attempts: row.attempts || 0 // 【新增】复用次数
       };
     }
 
     async function saveOrder(oid, order) {
       await DB.prepare(`
         INSERT INTO orders (oid, status, sid, assigned_phone, phone, expire, code, from_pool,
-                            created_at, done_time, phone_assigned_at, filters_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            created_at, done_time, phone_assigned_at, filters_json, attempts)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(oid) DO UPDATE SET
           status = excluded.status,
           sid = excluded.sid,
@@ -118,7 +114,8 @@ export async function onRequest(context) {
           from_pool = excluded.from_pool,
           done_time = excluded.done_time,
           phone_assigned_at = excluded.phone_assigned_at,
-          filters_json = excluded.filters_json
+          filters_json = excluded.filters_json,
+          attempts = excluded.attempts
       `).bind(
         oid,
         order.status || 'new',
@@ -131,7 +128,8 @@ export async function onRequest(context) {
         order.createdAt || 0,
         order.doneTime || null,
         order.phoneAssignedAt || null,
-        order.filters ? JSON.stringify(order.filters) : null
+        order.filters ? JSON.stringify(order.filters) : null,
+        order.attempts || 0
       ).run();
     }
 
@@ -146,7 +144,6 @@ export async function onRequest(context) {
       }));
     }
 
-    // ===== 卡密 =====
     async function getCards() {
       const { results } = await DB.prepare('SELECT * FROM cards').all();
       return results.map(r => ({
@@ -160,7 +157,6 @@ export async function onRequest(context) {
       }));
     }
 
-    // ===== 活跃订单索引 =====
     async function updateActiveIndex(oid, phone, expire) {
       await DB.prepare(
         'INSERT INTO active_orders (oid, phone, expire) VALUES (?, ?, ?) ' +
@@ -171,20 +167,15 @@ export async function onRequest(context) {
       await DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid).run();
     }
 
-    // ===== 日志 =====
     async function addLog(phone, oid, action) {
       if (action !== 'sms_received') return;
       await DB.batch([
-        DB.prepare(
-          'INSERT INTO phone_logs (phone, oid, action, time) VALUES (?, ?, ?, ?)'
-        ).bind(phone, oid, action, new Date().toISOString()),
-        DB.prepare(
-          'DELETE FROM phone_logs WHERE id NOT IN (SELECT id FROM phone_logs ORDER BY id DESC LIMIT 100)'
-        )
+        DB.prepare('INSERT INTO phone_logs (phone, oid, action, time) VALUES (?, ?, ?, ?)')
+          .bind(phone, oid, action, new Date().toISOString()),
+        DB.prepare('DELETE FROM phone_logs WHERE id NOT IN (SELECT id FROM phone_logs ORDER BY id DESC LIMIT 100)')
       ]);
     }
 
-    // ===== 卡密生成 =====
     function generateCardKey() {
       const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
       const segment = () => {
@@ -195,7 +186,6 @@ export async function onRequest(context) {
       return `HZ-${segment()}-${segment()}`;
     }
 
-    // ===== Token =====
     async function getValidToken() {
       if (!HAOZHU.user || !HAOZHU.pass) throw new Error('未配置接码平台账号密码');
 
@@ -226,7 +216,6 @@ export async function onRequest(context) {
       return tokenStr;
     }
 
-    // ===== 释放订单号码 =====
     async function releaseOrderPhone(order, oid) {
       if (!order || !order.phone) return;
       if (order.fromPool) {
@@ -269,7 +258,7 @@ export async function onRequest(context) {
           paragraph: cfg.paragraph || '',
           exclude: cfg.exclude || '',
           uid: cfg.uid || '',
-          customNotice: cfg.customNotice || '' // 【新增】读取用户端公告并返回
+          customNotice: cfg.customNotice || ''
         });
       }
 
@@ -281,7 +270,7 @@ export async function onRequest(context) {
         const newParagraph = url.searchParams.get('paragraph') || '';
         const newExclude = url.searchParams.get('exclude') || '';
         const newUid = url.searchParams.get('uid') || '';
-        const newCustomNotice = url.searchParams.get('customNotice') || ''; // 【新增】获取用户端公告
+        const newCustomNotice = url.searchParams.get('customNotice') || '';
 
         const existing = await getConfig('__api_config__') || {};
 
@@ -307,7 +296,7 @@ export async function onRequest(context) {
           paragraph: newParagraph,
           exclude: newExclude,
           uid: newUid,
-          customNotice: newCustomNotice // 【新增】将用户端公告存入数据库
+          customNotice: newCustomNotice
         };
 
         await putConfig('__api_config__', newConfig);
@@ -363,7 +352,6 @@ export async function onRequest(context) {
         const cursorStr = url.searchParams.get('cursor') || null;
         const limit = Math.min(parseInt(url.searchParams.get('limit')) || 100, 200);
 
-        // 游标格式：`createdAt:oid`（复合游标，避免同一毫秒内翻页丢数据）
         let cursor = null;
         if (cursorStr) {
           const idx = cursorStr.indexOf(':');
@@ -374,8 +362,8 @@ export async function onRequest(context) {
           }
         }
 
-        let sql = `SELECT oid, phone, assigned_phone, status, code, expire, done_time, created_at, phone_assigned_at
-                   FROM orders WHERE status = 'done'`;
+        let sql = `SELECT oid, phone, assigned_phone, status, code, expire, done_time, created_at, phone_assigned_at, attempts
+                   FROM orders WHERE status IN ('done', 'active')`;
         const params = [];
         if (cursor) {
           sql += ' AND (created_at < ? OR (created_at = ? AND oid < ?))';
@@ -395,10 +383,11 @@ export async function onRequest(context) {
           expire: r.expire || null,
           doneTime: r.done_time || null,
           createdAt: r.created_at || null,
-          phoneAssignedAt: r.phone_assigned_at || null
+          phoneAssignedAt: r.phone_assigned_at || null,
+          attempts: r.attempts || 0
         }));
 
-        const totalRow = await DB.prepare("SELECT COUNT(*) AS c FROM orders WHERE status = 'done'").first();
+        const totalRow = await DB.prepare("SELECT COUNT(*) AS c FROM orders WHERE status IN ('done', 'active')").first();
 
         const last = orders[orders.length - 1];
         const hasMore = orders.length === limit;
@@ -413,7 +402,6 @@ export async function onRequest(context) {
       }
 
       case 'rebuildOrderIndex': {
-        // D1 模式不再需要 JSON 索引，保留接口以兼容前端
         return jsonResponse({ success: true, total: 0, message: 'D1 模式无需重建索引' });
       }
 
@@ -449,7 +437,8 @@ export async function onRequest(context) {
           phone: null, expire: null, code: null,
           fromPool: false,
           createdAt,
-          filters: { ascription, paragraph, exclude, isp, province, uid }
+          filters: { ascription, paragraph, exclude, isp, province, uid },
+          attempts: 0
         };
 
         await saveOrder(oid, newOrder);
@@ -583,7 +572,6 @@ export async function onRequest(context) {
           }
           stmts.push(DB.prepare("UPDATE phone_pool SET status = 'available', oid = NULL, expire = NULL WHERE phone = ?").bind(row.phone));
         }
-        // 分批执行，避免单次 batch 语句过多
         for (let i = 0; i < stmts.length; i += 100) {
           await DB.batch(stmts.slice(i, i + 100));
         }
@@ -619,6 +607,7 @@ export async function onRequest(context) {
       case 'status': {
         const order = await getOrder(oid);
         if (!order) return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
+        
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           await releaseOrderPhone(order, oid);
           await DB.prepare(
@@ -629,9 +618,54 @@ export async function onRequest(context) {
         return jsonResponse(order);
       }
 
+      case 'reuse': {
+        // 【新增】复用号码逻辑
+        const order = await getOrder(oid);
+        if (!order) return jsonResponse({ error: '订单不存在' }, 404);
+        
+        if (order.attempts >= MAX_ATTEMPTS) {
+          return jsonResponse({ error: '最大使用次数已达上限', status: 'done' }, 403);
+        }
+
+        const reusePhone = order.phone;
+        if (!reusePhone) {
+          return jsonResponse({ error: '当前没有可复用的号码，请先释放并重新获取' }, 400);
+        }
+
+        try {
+          const tokenStr = await getValidToken();
+          const orderSid = order.sid || HAOZHU.sid;
+          const reqUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${orderSid}&phone=${encodeURIComponent(reusePhone)}`;
+          
+          const phoneResp = await fetchWithTimeout(reqUrl);
+          const phoneData = await phoneResp.json();
+
+          if (phoneData.code == 0) {
+            order.expire = Date.now() + PHONE_TTL_MS;
+            order.status = 'active';
+            order.code = null; // 清空旧的验证码
+            order.attempts = (order.attempts || 0) + 1;
+            await saveOrder(oid, order);
+            await updateActiveIndex(oid, reusePhone, order.expire);
+
+            return jsonResponse({ 
+              success: true, 
+              phone: reusePhone, 
+              expire: order.expire, 
+              attempts: order.attempts 
+            });
+          }
+          return jsonResponse({ error: '复用号码失败: ' + (phoneData.msg || '平台拒绝') }, 400);
+        } catch (e) {
+          return jsonResponse({ error: '请求接码平台超时或出错: ' + e.message }, 500);
+        }
+      }
+
       case 'getPhone': {
         let order = await getOrder(oid);
         if (!order) return jsonResponse({ error: '订单不存在或已失效' }, 404);
+        
+        // 如果 attempts >= 3 且状态为 done，禁止再次获取
         if (order.status === 'done') return jsonResponse({ error: '订单已完成' }, 403);
         if (order.status === 'released') return jsonResponse({ error: '订单已被管理员释放' }, 403);
 
@@ -641,7 +675,7 @@ export async function onRequest(context) {
         }
 
         if (order.status === 'active' && order.expire && Date.now() < order.expire) {
-          return jsonResponse({ phone: order.phone, expire: order.expire });
+          return jsonResponse({ phone: order.phone, expire: order.expire, attempts: order.attempts });
         }
 
         if (order.status === 'active' && order.expire && Date.now() >= order.expire) {
@@ -671,14 +705,15 @@ export async function onRequest(context) {
             order.code = null;
             order.fromPool = false;
             order.phoneAssignedAt = Date.now();
+            order.attempts = (order.attempts || 0) + 1; // 首次分配计入1次
             await saveOrder(oid, order);
             await updateActiveIndex(oid, realPhone, order.expire);
-            return jsonResponse({ phone: realPhone, expire: order.expire });
+            return jsonResponse({ phone: realPhone, expire: order.expire, attempts: order.attempts });
           }
           return jsonResponse({ error: '获取指定手机号失败：' + (phoneData.msg || '平台无该号或已被占用') }, 400);
         }
 
-        // 原子占用池中号码，避免并发下多个订单抢到同一号码
+        // 池中取号
         const expire = Date.now() + PHONE_TTL_MS;
         const pickedRes = await DB.prepare(`
           UPDATE phone_pool SET status = 'in_use', oid = ?, expire = ?
@@ -700,12 +735,13 @@ export async function onRequest(context) {
           order.code = null;
           order.fromPool = true;
           order.phoneAssignedAt = Date.now();
+          order.attempts = (order.attempts || 0) + 1; // 首次分配计入1次
           await saveOrder(oid, order);
           await updateActiveIndex(oid, phone, expire);
-          return jsonResponse({ phone, expire });
+          return jsonResponse({ phone, expire, attempts: order.attempts });
         }
 
-        // 池中无可用号码，走平台取号
+        // 平台取号
         const f = order.filters || {};
         let apiUrl = `https://${HAOZHU.server}/sms/?api=getPhone&token=${tokenStr}&sid=${orderSid}`;
         if (f.ascription) apiUrl += `&ascription=${encodeURIComponent(f.ascription)}`;
@@ -725,9 +761,10 @@ export async function onRequest(context) {
           order.code = null;
           order.fromPool = false;
           order.phoneAssignedAt = Date.now();
+          order.attempts = (order.attempts || 0) + 1; // 首次分配计入1次
           await saveOrder(oid, order);
           await updateActiveIndex(oid, phone, order.expire);
-          return jsonResponse({ phone, expire: order.expire });
+          return jsonResponse({ phone, expire: order.expire, attempts: order.attempts });
         }
         return jsonResponse({ error: phoneData.msg || '取号失败' }, 500);
       }
@@ -770,13 +807,20 @@ export async function onRequest(context) {
           if (raw) {
             const match = raw.match(/(?<!\d)(\d{4,6})(?!\d)/);
             if (match) {
-              await DB.batch([
-                DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ? WHERE oid = ?")
-                  .bind(match[1], Date.now(), oid),
-                DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
-              ]);
+              const code = match[1];
+              // 【修改】如果是最后一次，直接置为 done
+              if (order.attempts >= MAX_ATTEMPTS) {
+                await DB.batch([
+                  DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ? WHERE oid = ?")
+                    .bind(code, Date.now(), oid),
+                  DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
+                ]);
+              } else {
+                // 还有次数，只更新验证码，不结束订单
+                await DB.prepare("UPDATE orders SET code = ? WHERE oid = ?").bind(code, oid).run();
+              }
               await addLog(order.phone, oid, 'sms_received');
-              return jsonResponse({ code: match[1], status: 'done' });
+              return jsonResponse({ code, status: order.attempts >= MAX_ATTEMPTS ? 'done' : 'active' });
             }
           }
         }
@@ -792,7 +836,8 @@ export async function onRequest(context) {
           status: 'pending',
           code: null,
           fromPool: false,
-          createdAt: Date.now()
+          createdAt: Date.now(),
+          attempts: 0
         };
         await saveOrder(oid, order);
         return jsonResponse({ success: true });
