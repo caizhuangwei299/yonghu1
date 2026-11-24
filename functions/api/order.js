@@ -218,7 +218,7 @@ export async function onRequest(context) {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         const order = await getOrder(oid);
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
-        if (order.status !== 'active') return jsonResponse({ error: '订单未处于等待接码状态' }, 400);
+        if (order.status !== 'active' && order.status !== 'expired') return jsonResponse({ error: '订单未处于等待接码状态' }, 400);
 
         const code = Math.floor(100000 + Math.random() * 900000).toString();
         let newAttempts = order.attempts || 0;
@@ -231,7 +231,7 @@ export async function onRequest(context) {
             DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
           ]);
         } else {
-          await DB.prepare("UPDATE orders SET code = ?, attempts = ?, expire = NULL WHERE oid = ?")
+          await DB.prepare("UPDATE orders SET code = ?, status = 'active', attempts = ?, expire = NULL WHERE oid = ?")
             .bind(code, newAttempts, oid).run();
         }
         
@@ -247,13 +247,13 @@ export async function onRequest(context) {
         const order = await getOrder(oid);
         if (!order) return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
         
-        // 只有 expire 存在且已过期时，才自动释放
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           await releaseOrderPhone(order, oid);
+          // 不重置 phone，保留旧号码供用户选择复用
           await DB.prepare(
-            "UPDATE orders SET status = 'expired', phone = NULL, expire = NULL WHERE oid = ?"
+            "UPDATE orders SET status = 'expired', expire = NULL WHERE oid = ?"
           ).bind(oid).run();
-          return jsonResponse({ status: 'expired', phone: null, expire: null, code: null, attempts: order.attempts });
+          return jsonResponse({ status: 'expired', phone: order.phone, expire: null, code: null, attempts: order.attempts });
         }
         return jsonResponse(order);
       }
@@ -281,7 +281,7 @@ export async function onRequest(context) {
             await updateActiveIndex(oid, reusePhone, order.expire);
             return jsonResponse({ success: true, phone: reusePhone, expire: order.expire, attempts: order.attempts });
           }
-          return jsonResponse({ error: '复用号码失败: ' + (phoneData.msg || '平台拒绝') }, 400);
+          return jsonResponse({ error: '复用号码失败: ' + (phoneData.msg || '该号码已被释放，请获取新号') }, 400);
         } catch (e) {
           return jsonResponse({ error: '请求接码平台超时或出错: ' + e.message }, 500);
         }
@@ -411,9 +411,9 @@ export async function onRequest(context) {
         if (order.status === 'active' && order.expire && Date.now() >= order.expire) {
           await releaseOrderPhone(order, oid);
           await DB.prepare(
-            "UPDATE orders SET status = 'expired', phone = NULL, expire = NULL WHERE oid = ?"
+            "UPDATE orders SET status = 'expired', expire = NULL WHERE oid = ?"
           ).bind(oid).run();
-          return jsonResponse({ status: 'expired', code: null });
+          return jsonResponse({ status: 'expired', code: null, phone: order.phone });
         }
 
         if (!order.phone) return jsonResponse({ error: '订单不存在' }, 404);
@@ -443,7 +443,6 @@ export async function onRequest(context) {
                   DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
                 ]);
               } else {
-                // 【关键】未达到上限时，expire 设为 NULL 暂停倒计时，防止页面刷新后被误释放
                 await DB.prepare("UPDATE orders SET code = ?, attempts = ?, expire = NULL WHERE oid = ?").bind(code, newAttempts, oid).run();
               }
               await DB.prepare('INSERT INTO phone_logs (phone, oid, action, time) VALUES (?, ?, ?, ?)')
