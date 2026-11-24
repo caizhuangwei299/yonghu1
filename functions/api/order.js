@@ -71,8 +71,7 @@ export async function onRequest(context) {
       'getBalance', 'lockOrder', 'blockPhone',
       'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard',
       'createOrder', 'listActiveOrders', 'listAllOrders', 'releaseAllOrders',
-      'cancelRecvPhone', 'saveApiConfig', 'getApiConfig', 'rebuildOrderIndex',
-      'mockSMS' // 新增测试接口
+      'cancelRecvPhone', 'saveApiConfig', 'getApiConfig', 'rebuildOrderIndex'
     ];
     if (!oid && !poolActions.includes(action)) {
       return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -605,36 +604,6 @@ export async function onRequest(context) {
         return jsonResponse({ logs: results });
       }
 
-      // 【测试】模拟接收短信
-      case 'mockSMS': {
-        if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
-        const order = await getOrder(oid);
-        if (!order) return jsonResponse({ error: '订单不存在' }, 404);
-        if (order.status !== 'active' && order.status !== 'expired') return jsonResponse({ error: '订单未处于等待接码状态' }, 400);
-
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
-        let newAttempts = order.attempts || 0;
-        newAttempts += 1; 
-
-        if (newAttempts >= MAX_ATTEMPTS) {
-          await DB.batch([
-            DB.prepare("UPDATE orders SET code = ?, status = 'done', done_time = ?, attempts = ?, expire = NULL WHERE oid = ?")
-              .bind(code, Date.now(), newAttempts, oid),
-            DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid)
-          ]);
-        } else {
-          await DB.prepare("UPDATE orders SET code = ?, status = 'active', attempts = ?, expire = NULL WHERE oid = ?")
-            .bind(code, newAttempts, oid).run();
-        }
-        
-        if (order.phone) {
-          await DB.prepare('INSERT INTO phone_logs (phone, oid, action, time) VALUES (?, ?, ?, ?)')
-            .bind(order.phone, oid, 'sms_received', new Date().toISOString()).run();
-        }
-
-        return jsonResponse({ success: true, code, attempts: newAttempts, status: newAttempts >= MAX_ATTEMPTS ? 'done' : 'active' });
-      }
-
       case 'status': {
         const order = await getOrder(oid);
         if (!order) return jsonResponse({ status: 'invalid', phone: null, expire: null, code: null });
@@ -825,6 +794,7 @@ export async function onRequest(context) {
               const code = match[1];
               let newAttempts = order.attempts || 0;
               
+              // 【核心扣费逻辑】只有接到新验证码时，才消耗次数
               if (order.code !== code) {
                 newAttempts += 1;
               }
