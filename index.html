@@ -287,7 +287,6 @@
             min-height: auto; padding: 10px 16px; font-size: 14px; border-radius: 999px; width: auto; flex: 1;
         }
 
-        /* 测试按钮 */
         #testMockBtn {
             position: fixed; bottom: 30px; right: 30px; z-index: 9999;
             background: var(--danger); color: #fff; border: none; border-radius: 50px;
@@ -378,8 +377,14 @@
 
             <div id="timeoutBox" class="hidden">
                 <div class="status-text status-warning">⏰ 手机号已过期（65秒未收到验证码）</div>
-                <p class="text-tertiary" style="margin-top: 8px;">号码已自动释放，请重新获取新号码</p>
-                <button class="btn btn-primary" onclick="getPhone()" id="getPhoneBtnTimeout" style="margin-top: 16px;">重新获取手机号</button>
+                <p class="text-tertiary" style="margin-top: 8px;">号码已自动释放，您可以选择继续尝试使用该号码或获取新号码</p>
+                
+                <button class="btn btn-primary" onclick="reuseFromTimeout()" id="reuseTimeoutBtn" style="margin-top: 16px;">
+                    继续使用上一个号码
+                </button>
+                <button class="btn btn-secondary" onclick="getPhone()" id="getPhoneBtnTimeout" style="margin-top: 12px;">
+                    获取新号码
+                </button>
             </div>
 
             <div id="doneBox" class="hidden">
@@ -449,7 +454,7 @@
 
             const API_BASE = '/api/order';
             const TIMEOUT_SEC = 65; // 65 秒
-            const POLL_INTERVAL = 3000; // 轮询间隔缩短为 3 秒，便于测试
+            const POLL_INTERVAL = 3000; // 3 秒轮询
             const MAX_RETRIES = 22; 
             const MAX_ATTEMPTS = 3; 
 
@@ -623,11 +628,13 @@
                 $('getPhoneBtn').disabled = true;
                 $('getPhoneBtnTimeout').disabled = true;
                 $('releaseBtn').disabled = true;
+                if($('reuseTimeoutBtn')) $('reuseTimeoutBtn').disabled = true;
             }
 
             function enableGetButtons() {
                 $('getPhoneBtn').disabled = false;
                 $('getPhoneBtnTimeout').disabled = false;
+                if($('reuseTimeoutBtn')) $('reuseTimeoutBtn').disabled = false;
             }
 
             function extractNumbers(str) {
@@ -703,12 +710,15 @@
                 showCodeModal(phone || currentPhone, code);
             }
 
-            function handleExpired() {
+            function handleExpired(phone) {
                 isOrderExpired = true;
                 stopAllTimers();
                 enableGetButtons();
                 showUI('timeout');
                 setStatus('手机号已过期，可重新获取', 'warning');
+                if (phone) {
+                    currentPhone = phone;
+                }
             }
 
             function startPolling() {
@@ -723,7 +733,7 @@
 
                     try {
                         const statusData = await apiCall('status');
-                        if (statusData.status === 'expired') { handleExpired(); return; }
+                        if (statusData.status === 'expired') { handleExpired(statusData.phone); return; }
                         if (statusData.status === 'released' || statusData.status === 'invalid') {
                             isOrderLocked = true; stopAllTimers(); showUI('locked'); return;
                         }
@@ -735,7 +745,7 @@
                         }
                         if (statusData.status === 'active') {
                             const sms = await apiCall('getSMS');
-                            if (sms.status === 'expired') { handleExpired(); return; }
+                            if (sms.status === 'expired') { handleExpired(sms.phone); return; }
                             if (sms.code) {
                                 usedAttempts = sms.attempts || 0;
                                 updateReuseUI();
@@ -800,6 +810,19 @@
                 }
             };
 
+            // 超时后复用
+            window.reuseFromTimeout = async function() {
+                if (usedAttempts >= MAX_ATTEMPTS) {
+                    alert('已达到最大使用次数限制');
+                    return;
+                }
+                if (!currentPhone) {
+                    alert('没有可用的旧号码，请获取新号码');
+                    return;
+                }
+                reuseNumber();
+            };
+
             window.reuseNumber = async function() {
                 if (usedAttempts >= MAX_ATTEMPTS) {
                     alert('已达到最大使用次数限制');
@@ -816,6 +839,7 @@
                 }
 
                 isOrderDone = false;
+                isOrderExpired = false;
                 hasShownCodeModal = false; 
                 disableAllButtons();
                 
@@ -842,9 +866,11 @@
                     startPolling();
                     
                 } catch (e) {
+                    alert(e.message || '再次使用失败，该号码可能已被释放，请获取新号');
+                    // 复用失败，重置界面到超时界面，让用户选择获取新号
+                    isOrderExpired = true;
                     enableGetButtons();
-                    showUI('error');
-                    $('errorMessage').textContent = '再次使用失败，请稍后重试或释放号码';
+                    showUI('timeout');
                 }
             };
 
@@ -895,10 +921,10 @@
                         isOrderLocked = true; stopAllTimers(); showUI('locked'); return;
                     }
                     if (data.status === 'expired') {
-                        isOrderExpired = true;
-                        enableGetButtons(); showUI('timeout'); setStatus('手机号已过期，可重新获取', 'warning'); 
+                        currentPhone = data.phone; // 记录旧号码
                         usedAttempts = data.attempts || 0;
                         updateReuseUI();
+                        handleExpired(data.phone);
                         return;
                     }
                     if (data.status === 'done' && data.code) {
@@ -977,4 +1003,5 @@
             })();
         })();
     </script>
-</body
+</body>
+</html>
