@@ -72,7 +72,7 @@ export async function onRequest(context) {
       'generateCard', 'activateCard', 'verifyCard', 'cardList', 'deleteCard',
       'createOrder', 'listActiveOrders', 'listAllOrders', 'releaseAllOrders',
       'cancelRecvPhone', 'saveApiConfig', 'getApiConfig', 'rebuildOrderIndex',
-      'mockSMS'
+      'mockSMS' // 新增测试接口
     ];
     if (!oid && !poolActions.includes(action)) {
       return jsonResponse({ error: '缺少订单ID' }, 400);
@@ -145,6 +145,19 @@ export async function onRequest(context) {
       }));
     }
 
+    async function getCards() {
+      const { results } = await DB.prepare('SELECT * FROM cards').all();
+      return results.map(r => ({
+        key: r.key,
+        type: r.type,
+        duration: r.duration,
+        activated: !!r.activated,
+        activated_at: r.activated_at,
+        expire_at: r.expire_at,
+        created_at: r.created_at
+      }));
+    }
+
     async function updateActiveIndex(oid, phone, expire) {
       await DB.prepare(
         'INSERT INTO active_orders (oid, phone, expire) VALUES (?, ?, ?) ' +
@@ -153,6 +166,25 @@ export async function onRequest(context) {
     }
     async function removeFromActiveIndex(oid) {
       await DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(oid).run();
+    }
+
+    async function addLog(phone, oid, action) {
+      if (action !== 'sms_received') return;
+      await DB.batch([
+        DB.prepare('INSERT INTO phone_logs (phone, oid, action, time) VALUES (?, ?, ?, ?)')
+          .bind(phone, oid, action, new Date().toISOString()),
+        DB.prepare('DELETE FROM phone_logs WHERE id NOT IN (SELECT id FROM phone_logs ORDER BY id DESC LIMIT 100)')
+      ]);
+    }
+
+    function generateCardKey() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const segment = () => {
+        let s = '';
+        for (let i = 0; i < 4; i++) s += chars[Math.floor(Math.random() * chars.length)];
+        return s;
+      };
+      return `HZ-${segment()}-${segment()}`;
     }
 
     async function getValidToken() {
@@ -201,6 +233,19 @@ export async function onRequest(context) {
       if (oid) await removeFromActiveIndex(oid);
     }
 
+    async function releaseOrderByOid(oid) {
+      const order = await getOrder(oid);
+      if (!order) return { success: false, error: '订单不存在' };
+      if (order.status === 'done') return { success: false, error: '订单已完成，无法释放' };
+      if (order.status === 'released') return { success: false, error: '订单已被释放过' };
+
+      await releaseOrderPhone(order, oid);
+      await DB.prepare(
+        "UPDATE orders SET status = 'released', phone = NULL, expire = NULL, code = NULL WHERE oid = ?"
+      ).bind(oid).run();
+      return { success: true };
+    }
+
     // ===== 业务分发 =====
     switch (action) {
       case 'getApiConfig': {
@@ -210,10 +255,357 @@ export async function onRequest(context) {
           apiUser: cfg.user || '',
           apiPass: cfg.pass || '',
           sid: cfg.sid || '24085',
+          ascription: cfg.ascription || '',
+          paragraph: cfg.paragraph || '',
+          exclude: cfg.exclude || '',
+          uid: cfg.uid || '',
           customNotice: cfg.customNotice || ''
         });
       }
 
+      case 'saveApiConfig': {
+        const newUser = url.searchParams.get('apiUser');
+        const newPass = url.searchParams.get('apiPass');
+        const newSid  = url.searchParams.get('sid');
+        const newAscription = url.searchParams.get('ascription') || '';
+        const newParagraph = url.searchParams.get('paragraph') || '';
+        const newExclude = url.searchParams.get('exclude') || '';
+        const newUid = url.searchParams.get('uid') || '';
+        const newCustomNotice = url.searchParams.get('customNotice') || '';
+
+        const existing = await getConfig('__api_config__') || {};
+
+        let finalUser = existing.user || '';
+        let finalPass = existing.pass || '';
+
+        if (newUser && newPass) {
+          finalUser = newUser;
+          finalPass = newPass;
+        } else if (newUser || newPass) {
+          return jsonResponse({ error: '账号和密码必须同时提供' }, 400);
+        } else {
+          if (!finalUser || !finalPass) {
+            return jsonResponse({ error: '首次配置需要提供账号和密码' }, 400);
+          }
+        }
+
+        const newConfig = {
+          user: finalUser,
+          pass: finalPass,
+          sid: newSid || existing.sid || '24085',
+          ascription: newAscription,
+          paragraph: newParagraph,
+          exclude: newExclude,
+          uid: newUid,
+          customNotice: newCustomNotice
+        };
+
+        await putConfig('__api_config__', newConfig);
+
+        if (finalUser !== existing.user || finalPass !== existing.pass) {
+          await deleteConfig('__token_data__');
+        }
+
+        return jsonResponse({ success: true });
+      }
+
+      case 'cancelRecvPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        try {
+          const tokenStr = await getValidToken();
+          const cancelUrl = `https://${HAOZHU.server}/sms/?api=cancelRecv&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${encodeURIComponent(phone)}`;
+          const cancelResp = await fetchWithTimeout(cancelUrl);
+          const cancelData = await cancelResp.json();
+
+          if (cancelData.code == 0 || cancelData.msg?.includes('成功')) {
+            const entry = await DB.prepare('SELECT * FROM phone_pool WHERE phone = ?').bind(phone).first();
+            if (entry && entry.status === 'in_use') {
+              if (entry.oid) {
+                const order = await getOrder(entry.oid);
+                if (order && order.status === 'active') {
+                  await DB.batch([
+                    DB.prepare("UPDATE orders SET status = 'released', phone = NULL, expire = NULL WHERE oid = ?").bind(entry.oid),
+                    DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(entry.oid)
+                  ]);
+                }
+              }
+              await DB.prepare(
+                "UPDATE phone_pool SET status = 'available', oid = NULL, expire = NULL WHERE phone = ?"
+              ).bind(phone).run();
+            }
+            return jsonResponse({ success: true, msg: cancelData.msg || '释放成功' });
+          }
+          return jsonResponse({ success: false, error: cancelData.msg || '平台释放失败' }, 400);
+        } catch (e) {
+          return jsonResponse({ error: '请求接码平台失败: ' + e.message }, 500);
+        }
+      }
+
+      case 'listActiveOrders': {
+        const now = Date.now();
+        await DB.prepare('DELETE FROM active_orders WHERE expire IS NOT NULL AND expire <= ?').bind(now).run();
+        const { results } = await DB.prepare('SELECT oid, phone, expire FROM active_orders').all();
+        return jsonResponse({ orders: results });
+      }
+
+      case 'listAllOrders': {
+        const cursorStr = url.searchParams.get('cursor') || null;
+        const limit = Math.min(parseInt(url.searchParams.get('limit')) || 100, 200);
+
+        let cursor = null;
+        if (cursorStr) {
+          const idx = cursorStr.indexOf(':');
+          if (idx > 0) {
+            const createdAt = Number(cursorStr.slice(0, idx));
+            const cursorOid = cursorStr.slice(idx + 1);
+            if (Number.isFinite(createdAt) && cursorOid) cursor = { createdAt, oid: cursorOid };
+          }
+        }
+
+        let sql = `SELECT oid, phone, assigned_phone, status, code, expire, done_time, created_at, phone_assigned_at, attempts
+                   FROM orders WHERE status IN ('done', 'active')`;
+        const params = [];
+        if (cursor) {
+          sql += ' AND (created_at < ? OR (created_at = ? AND oid < ?))';
+          params.push(cursor.createdAt, cursor.createdAt, cursor.oid);
+        }
+        sql += ' ORDER BY created_at DESC, oid DESC LIMIT ?';
+        params.push(limit);
+
+        const { results } = await DB.prepare(sql).bind(...params).all();
+
+        const orders = results.map(r => ({
+          oid: r.oid,
+          phone: r.phone || '---',
+          assignedPhone: r.assigned_phone || '',
+          status: r.status,
+          code: r.code || '',
+          expire: r.expire || null,
+          doneTime: r.done_time || null,
+          createdAt: r.created_at || null,
+          phoneAssignedAt: r.phone_assigned_at || null,
+          attempts: r.attempts || 0
+        }));
+
+        const totalRow = await DB.prepare("SELECT COUNT(*) AS c FROM orders WHERE status IN ('done', 'active')").first();
+
+        const last = orders[orders.length - 1];
+        const hasMore = orders.length === limit;
+        const nextCursor = hasMore && last ? `${last.createdAt}:${last.oid}` : null;
+
+        return jsonResponse({
+          orders,
+          cursor: nextCursor,
+          list_complete: !hasMore,
+          total: totalRow ? totalRow.c : 0
+        });
+      }
+
+      case 'rebuildOrderIndex': {
+        return jsonResponse({ success: true, total: 0, message: 'D1 模式无需重建索引' });
+      }
+
+      case 'releaseAllOrders': {
+        const { results } = await DB.prepare('SELECT oid FROM active_orders').all();
+        const details = [];
+        for (const row of results) {
+          const result = await releaseOrderByOid(row.oid);
+          details.push({ oid: row.oid, success: result.success, error: result.error });
+        }
+        const successCount = details.filter(r => r.success).length;
+        return jsonResponse({ success: true, released: successCount, total: details.length, details });
+      }
+
+      case 'createOrder': {
+        if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
+        const existing = await getOrder(oid);
+        if (existing) return jsonResponse({ error: '订单已存在' }, 400);
+
+        const specifiedPhone = url.searchParams.get('phone') || '';
+        const ascription = url.searchParams.get('ascription') || '';
+        const paragraph  = url.searchParams.get('paragraph')  || '';
+        const exclude    = url.searchParams.get('exclude')    || '';
+        const isp        = url.searchParams.get('isp')        || '';
+        const province   = url.searchParams.get('Province')   || '';
+        const uid        = url.searchParams.get('uid')        || '';
+
+        const createdAt = Date.now();
+        const newOrder = {
+          status: 'new',
+          sid,
+          assignedPhone: specifiedPhone,
+          phone: null, expire: null, code: null,
+          fromPool: false,
+          createdAt,
+          filters: { ascription, paragraph, exclude, isp, province, uid },
+          attempts: 0
+        };
+
+        await saveOrder(oid, newOrder);
+        return jsonResponse({ success: true });
+      }
+
+      case 'generateCard': {
+        const type = url.searchParams.get('type') || 'trial';
+        const count = parseInt(url.searchParams.get('count')) || 1;
+        if (count < 1 || count > 100) return jsonResponse({ error: '数量需在1-100之间' }, 400);
+        const duration = type === 'month' ? 30 : 1;
+        const generated = [];
+        const stmts = [];
+        const now = Date.now();
+        for (let i = 0; i < count; i++) {
+          const key = generateCardKey();
+          stmts.push(
+            DB.prepare('INSERT INTO cards (key, type, duration, activated, created_at) VALUES (?, ?, ?, 0, ?)')
+              .bind(key, type, duration, now)
+          );
+          generated.push(key);
+        }
+        await DB.batch(stmts);
+        return jsonResponse({ success: true, keys: generated });
+      }
+
+      case 'activateCard': {
+        const key = url.searchParams.get('key');
+        if (!key) return jsonResponse({ error: '缺少卡密' }, 400);
+        const card = await DB.prepare('SELECT * FROM cards WHERE key = ?').bind(key).first();
+        if (!card) return jsonResponse({ error: '卡密不存在' }, 404);
+        if (card.activated) {
+          if (Date.now() > card.expire_at) return jsonResponse({ error: '卡密已过期' }, 400);
+          return jsonResponse({ success: true, expire_at: card.expire_at });
+        }
+        const now = Date.now();
+        const expireAt = now + card.duration * 86400 * 1000;
+        await DB.prepare('UPDATE cards SET activated = 1, activated_at = ?, expire_at = ? WHERE key = ?')
+          .bind(now, expireAt, key).run();
+        return jsonResponse({ success: true, expire_at: expireAt });
+      }
+
+      case 'verifyCard': {
+        const key = url.searchParams.get('key');
+        if (!key) return jsonResponse({ error: '缺少卡密' }, 400);
+        const card = await DB.prepare('SELECT * FROM cards WHERE key = ?').bind(key).first();
+        if (!card) return jsonResponse({ error: '卡密不存在' }, 404);
+        if (!card.activated) return jsonResponse({ valid: false, msg: '未激活' });
+        if (Date.now() > card.expire_at) return jsonResponse({ valid: false, msg: '已过期' });
+        return jsonResponse({ valid: true, expire_at: card.expire_at });
+      }
+
+      case 'cardList': {
+        const cards = await getCards();
+        return jsonResponse({ cards });
+      }
+
+      case 'deleteCard': {
+        const key = url.searchParams.get('key');
+        if (!key) return jsonResponse({ error: '缺少卡密' }, 400);
+        await DB.prepare('DELETE FROM cards WHERE key = ?').bind(key).run();
+        return jsonResponse({ success: true });
+      }
+
+      case 'getBalance': {
+        const tokenStr = await getValidToken();
+        const balanceResp = await fetchWithTimeout(`https://${HAOZHU.server}/sms/?api=getSummary&token=${tokenStr}`);
+        const balanceData = await balanceResp.json();
+        if (balanceData.code == 0) {
+          const bal = balanceData.balance || balanceData.summary || balanceData.money ||
+                      balanceData.data?.balance || balanceData.data?.money || balanceData.amount;
+          if (bal === undefined || bal === null) {
+            return jsonResponse({ error: '未找到余额字段，原始响应: ' + JSON.stringify(balanceData) });
+          }
+          return jsonResponse({ balance: bal });
+        }
+        return jsonResponse({ error: balanceData.msg || '查询失败' });
+      }
+
+      case 'blockPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        const tokenStr = await getValidToken();
+        const blockResp = await fetchWithTimeout(`https://${HAOZHU.server}/sms/?api=addBlacklist&token=${tokenStr}&sid=${HAOZHU.sid}&phone=${phone}`);
+        const blockData = await blockResp.json();
+        if (blockData.code == 0) {
+          await DB.prepare('DELETE FROM phone_pool WHERE phone = ?').bind(phone).run();
+          return jsonResponse({ success: true });
+        }
+        return jsonResponse({ error: blockData.msg || '拉黑失败' });
+      }
+
+      case 'lockOrder': {
+        if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
+        const result = await releaseOrderByOid(oid);
+        return result.success ? jsonResponse({ success: true }) : jsonResponse({ error: result.error }, 400);
+      }
+
+      case 'poolList': {
+        const pool = await getPool();
+        return jsonResponse({ pool });
+      }
+
+      case 'addPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        const existing = await DB.prepare('SELECT phone FROM phone_pool WHERE phone = ?').bind(phone).first();
+        if (existing) return jsonResponse({ error: '号码已存在' }, 400);
+        await DB.prepare("INSERT INTO phone_pool (phone, status, oid, expire) VALUES (?, 'available', NULL, NULL)")
+          .bind(phone).run();
+        return jsonResponse({ success: true });
+      }
+
+      case 'removePhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        await DB.prepare('DELETE FROM phone_pool WHERE phone = ?').bind(phone).run();
+        return jsonResponse({ success: true });
+      }
+
+      case 'resetPool': {
+        const { results } = await DB.prepare("SELECT phone, oid FROM phone_pool WHERE status = 'in_use'").all();
+        const stmts = [];
+        for (const row of results) {
+          if (row.oid) {
+            const order = await getOrder(row.oid);
+            if (order && order.status === 'active') {
+              stmts.push(DB.prepare("UPDATE orders SET status = 'released', phone = NULL, expire = NULL WHERE oid = ?").bind(row.oid));
+              stmts.push(DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(row.oid));
+            }
+          }
+          stmts.push(DB.prepare("UPDATE phone_pool SET status = 'available', oid = NULL, expire = NULL WHERE phone = ?").bind(row.phone));
+        }
+        for (let i = 0; i < stmts.length; i += 100) {
+          await DB.batch(stmts.slice(i, i + 100));
+        }
+        return jsonResponse({ success: true });
+      }
+
+      case 'releasePoolPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        const entry = await DB.prepare('SELECT * FROM phone_pool WHERE phone = ?').bind(phone).first();
+        if (!entry) return jsonResponse({ error: '号码不在池中' }, 404);
+        if (entry.status !== 'in_use') return jsonResponse({ error: '该号码未被占用' }, 400);
+        const stmts = [];
+        if (entry.oid) {
+          const order = await getOrder(entry.oid);
+          if (order && order.status === 'active') {
+            stmts.push(DB.prepare("UPDATE orders SET status = 'released', phone = NULL, expire = NULL WHERE oid = ?").bind(entry.oid));
+            stmts.push(DB.prepare('DELETE FROM active_orders WHERE oid = ?').bind(entry.oid));
+          }
+        }
+        stmts.push(DB.prepare("UPDATE phone_pool SET status = 'available', oid = NULL, expire = NULL WHERE phone = ?").bind(phone));
+        await DB.batch(stmts);
+        return jsonResponse({ success: true });
+      }
+
+      case 'logList': {
+        const { results } = await DB.prepare(
+          'SELECT phone, oid, action, time FROM phone_logs ORDER BY id DESC LIMIT 100'
+        ).all();
+        return jsonResponse({ logs: results });
+      }
+
+      // 【测试】模拟接收短信
       case 'mockSMS': {
         if (!oid) return jsonResponse({ error: '缺少订单ID' }, 400);
         const order = await getOrder(oid);
@@ -249,7 +641,7 @@ export async function onRequest(context) {
         
         if (order.expire && order.status === 'active' && Date.now() >= order.expire) {
           await releaseOrderPhone(order, oid);
-          // 不重置 phone，保留旧号码供用户选择复用
+          // 保留 phone 供复用
           await DB.prepare(
             "UPDATE orders SET status = 'expired', expire = NULL WHERE oid = ?"
           ).bind(oid).run();
@@ -259,6 +651,7 @@ export async function onRequest(context) {
       }
 
       case 'reuse': {
+        // 复用号码，不扣减次数
         const order = await getOrder(oid);
         if (!order) return jsonResponse({ error: '订单不存在' }, 404);
         if (order.attempts >= MAX_ATTEMPTS) return jsonResponse({ error: '最大使用次数已达上限', status: 'done' }, 403);
@@ -276,7 +669,7 @@ export async function onRequest(context) {
           if (phoneData.code == 0) {
             order.expire = Date.now() + PHONE_TTL_MS;
             order.status = 'active';
-            order.code = null; // 清空旧验证码
+            order.code = null; 
             await saveOrder(oid, order);
             await updateActiveIndex(oid, reusePhone, order.expire);
             return jsonResponse({ success: true, phone: reusePhone, expire: order.expire, attempts: order.attempts });
@@ -445,13 +838,28 @@ export async function onRequest(context) {
               } else {
                 await DB.prepare("UPDATE orders SET code = ?, attempts = ?, expire = NULL WHERE oid = ?").bind(code, newAttempts, oid).run();
               }
-              await DB.prepare('INSERT INTO phone_logs (phone, oid, action, time) VALUES (?, ?, ?, ?)')
-                .bind(order.phone, oid, 'sms_received', new Date().toISOString()).run();
+              await addLog(order.phone, oid, 'sms_received');
               return jsonResponse({ code, status: newAttempts >= MAX_ATTEMPTS ? 'done' : 'active', attempts: newAttempts });
             }
           }
         }
         return jsonResponse({ code: null, status: 'active', attempts: order.attempts });
+      }
+
+      case 'setPhone': {
+        const phone = url.searchParams.get('phone');
+        if (!phone) return jsonResponse({ error: '缺少 phone 参数' }, 400);
+        const order = {
+          phone,
+          expire: 0,
+          status: 'pending',
+          code: null,
+          fromPool: false,
+          createdAt: Date.now(),
+          attempts: 0
+        };
+        await saveOrder(oid, order);
+        return jsonResponse({ success: true });
       }
 
       default:
