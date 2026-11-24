@@ -13,13 +13,10 @@
             --primary: #007AFF;
             --primary-hover: #0066D9;
             --danger: #FF3B30;
-            --danger-hover: #E0352B;
             --success: #34C759;
             --warning: #FF9500;
             --text-primary: #1C1C1E;
-            --text-secondary: #3A3A3C;
             --text-tertiary: #8E8E93;
-            --text-quaternary: #AEAEB2;
             --separator: rgba(229, 229, 234, 0.6);
             --input-bg: rgba(242, 242, 247, 0.7);
             --radius: 24px;
@@ -290,6 +287,16 @@
             min-height: auto; padding: 10px 16px; font-size: 14px; border-radius: 999px; width: auto; flex: 1;
         }
 
+        /* 测试按钮 */
+        #testMockBtn {
+            position: fixed; bottom: 30px; right: 30px; z-index: 9999;
+            background: var(--danger); color: #fff; border: none; border-radius: 50px;
+            padding: 12px 20px; font-size: 15px; font-weight: 700;
+            box-shadow: 0 4px 16px rgba(255, 59, 48, 0.4); cursor: pointer;
+            display: none;
+        }
+        #testMockBtn:active { transform: scale(0.95); }
+
         @media (max-width: 480px) {
             .compact-phone { font-size: 15px; }
             .compact-code { font-size: 18px; letter-spacing: 1.5px; }
@@ -303,6 +310,8 @@
     </style>
 </head>
 <body>
+
+    <button id="testMockBtn" onclick="triggerMockSMS()">⚡ 模拟来短信</button>
 
     <div class="container" id="mainContainer">
         <div id="noOrderView">
@@ -353,7 +362,6 @@
                     </span>
                 </div>
 
-                <!-- ===== 隐藏倒计时、轮询提示等元素 ===== -->
                 <div style="display: none !important;">
                     <div id="countdownDisplay" class="hidden">65s</div>
                     <div class="polling-indicator" id="pollingIndicator">
@@ -361,9 +369,7 @@
                         <span>正在轮询验证码...</span>
                         <span class="poll-count" id="pollCount"></span>
                     </div>
-                    <p class="text-quaternary" style="margin-top: 8px;">自动检测中，收到验证码将自动显示</p>
                 </div>
-                <!-- ============================================== -->
 
                 <button class="btn btn-secondary" onclick="releasePhone()" id="releaseBtn" disabled style="margin-top: 20px;">
                     释放手机号，重新获取（65秒后可操作）
@@ -398,7 +404,7 @@
                         <button class="btn btn-secondary reuse-btn" onclick="reuseNumber()" id="reuseBtnDone">再次使用该号码</button>
                     </div>
                 </div>
-                <p class="text-tertiary" style="margin-top: 16px; color: var(--danger);">🔒 此订单已完成，链接永久失效。</p>
+                <p class="text-tertiary" id="doneTip" style="margin-top: 16px; color: var(--warning); font-weight: 600;"></p>
             </div>
 
             <div id="errorBox" class="hidden">
@@ -443,8 +449,8 @@
 
             const API_BASE = '/api/order';
             const TIMEOUT_SEC = 65; // 65 秒
-            const POLL_INTERVAL = 4000;
-            const MAX_RETRIES = 18; 
+            const POLL_INTERVAL = 3000; // 轮询间隔缩短为 3 秒，便于测试
+            const MAX_RETRIES = 22; 
             const MAX_ATTEMPTS = 3; 
 
             let currentOid = null;
@@ -466,6 +472,33 @@
             const codeOverlay = $('codeOverlay');
             const cmPhone = $('cmPhone');
             const cmCode = $('cmCode');
+
+            function updateTestBtnVisibility() {
+                const btn = $('testMockBtn');
+                if (btn && !$('orderView').classList.contains('hidden') && !$('phoneBox').classList.contains('hidden')) {
+                    btn.style.display = 'block';
+                } else if (btn) {
+                    btn.style.display = 'none';
+                }
+            }
+
+            window.triggerMockSMS = async function() {
+                if (!currentOid) return alert('当前没有活动的订单');
+                $('testMockBtn').textContent = '正在模拟...';
+                try {
+                    const res = await apiCall('mockSMS');
+                    if (res.success) {
+                        $('testMockBtn').textContent = '⚡ 模拟来短信';
+                        checkOrder(); 
+                    } else {
+                        alert('模拟失败: ' + (res.error || '未知错误'));
+                        $('testMockBtn').textContent = '⚡ 模拟来短信';
+                    }
+                } catch (e) {
+                    alert('请求出错，请检查后端是否部署正确');
+                    $('testMockBtn').textContent = '⚡ 模拟来短信';
+                }
+            };
 
             function updateReuseUI() {
                 const remain = MAX_ATTEMPTS - usedAttempts;
@@ -576,6 +609,7 @@
                 else if (state === 'timeout') { $('timeoutBox').classList.remove('hidden'); $('statusBox').classList.remove('hidden'); }
                 else if (state === 'done') { $('doneBox').classList.remove('hidden'); $('statusBox').classList.remove('hidden'); }
                 else if (state === 'error') { $('errorBox').classList.remove('hidden'); $('statusBox').classList.remove('hidden'); }
+                updateTestBtnVisibility();
             }
 
             function setStatus(msg, type) {
@@ -651,15 +685,19 @@
                 pureCode = extractNumbers(code);
                 $('codeDisplay').textContent = code;
                 
-                isOrderDone = true; // 已完成当前轮次
+                isOrderDone = true; 
 
                 if (isFinal) {
                     disableAllButtons();
                     showUI('done');
                     setStatus('次数已用尽，验证码已收到', 'success');
+                    $('doneTip').textContent = '🔒 次数已用尽，此订单已完成，链接永久失效。';
+                    $('doneTip').style.color = 'var(--danger)';
                 } else {
                     showUI('done'); 
                     setStatus('验证码已收到，可继续使用', 'success');
+                    $('doneTip').textContent = '提示：您还可以继续使用该号码接码。';
+                    $('doneTip').style.color = 'var(--warning)';
                 }
                 
                 showCodeModal(phone || currentPhone, code);
@@ -869,10 +907,11 @@
                         currentPhone = data.phone; $('phoneDisplayDone').textContent = data.phone;
                         pureCode = extractNumbers(data.code); $('codeDisplay').textContent = data.code;
                         showUI('done'); setStatus('验证码已收到', 'success'); 
+                        $('doneTip').textContent = '🔒 次数已用尽，此订单已完成，链接永久失效。';
+                        $('doneTip').style.color = 'var(--danger)';
                         updateReuseUI(); 
                         return;
                     }
-                    // 【修改】支持 active 状态下有 code（代表已接到验证码，暂未消耗完次数，等待用户复用或刷新）
                     if (data.status === 'active' && data.phone && data.code) {
                         isOrderDone = true; disableAllButtons();
                         usedAttempts = data.attempts || 1;
@@ -882,6 +921,8 @@
                         $('codeDisplay').textContent = data.code;
                         showUI('done'); 
                         setStatus('验证码已收到，可继续使用', 'success'); 
+                        $('doneTip').textContent = '提示：您还可以继续使用该号码接码。';
+                        $('doneTip').style.color = 'var(--warning)';
                         updateReuseUI(); 
                         return;
                     }
@@ -936,5 +977,4 @@
             })();
         })();
     </script>
-</body>
-</html>
+</body
